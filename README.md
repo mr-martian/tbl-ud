@@ -1,2 +1,2 @@
 # tbl-ud
-experiments in applying transition-based learning to UD data
+experiments in applying transformation-based learning to UD data
