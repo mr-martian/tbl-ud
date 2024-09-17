@@ -173,9 +173,8 @@ class Context:
         return f'({self.position} {self.cohort.as_pattern})'
 
     def make_rule(self, target: Cohort, fout):
-        if 'NEGATE' in self.position:
-            return
-        fout.write(f'ADDRELATION (ctx) {target.as_pattern} TO {self.in_rule} ;\n')
+        ir = self.in_rule.replace('NEGATE', '')
+        fout.write(f'ADDRELATION (ctx) {target.as_pattern} TO {ir} ;\n')
 
 @dataclass
 class Rule:
@@ -301,7 +300,7 @@ def generate_negative_rules(corpus: Corpus, rule: Rule):
                             rule.context + [Context('NEGATE s', pc)],
                         )
 
-def main(infile, outfile):
+def next_rule(infile, outfile):
     corpus = load_corpus(infile, outfile)
     for i in range(len(corpus)):
         for r in generate_rules(corpus, i):
@@ -320,23 +319,46 @@ def main(infile, outfile):
         return None
     return corpus.rules[corpus.by_score[best][0]]
 
+def main(infile: str, outfile: str, grammar: str):
+    rules_to_add = []
+
+    with tempfile.NamedTemporaryFile('w+') as temp_grammar:
+        try:
+            with open(grammar) as fin:
+                temp_grammar.write(fin.read())
+        except:
+            pass
+        temp_grammar.write('\nADDRELATION (x) (*) FROM (@0 (*)) ;\n')
+        temp_grammar.flush()
+
+        n = 0
+        while True:
+            rule = next_rule(infile, outfile)
+            if rule is None:
+                break
+            s = rule.as_str()
+            print('adding rule', s)
+            rules_to_add.append(s)
+            temp_grammar.write(s + '\n')
+            temp_grammar.flush()
+            apply_grammar(temp_grammar.name, infile, f'output/{n}.txt')
+            infile = f'output/{n}.txt'
+            n += 1
+
+    with open(grammar, 'a') as fout:
+        fout.write('\n' + '\n'.join(rules_to_add) + '\n')
+
 # - for top N rules
 #   - check if independent from added rules
+#     - require ID: on all words in input and check based on that
 #   - add if so
 
 if __name__ == '__main__':
     import sys
-    infile = sys.argv[1]
+    source = sys.argv[1]
     target = sys.argv[2]
     grammar = sys.argv[3]
-    n = 0
-    while True:
-        rule = main(infile, target)
-        if rule is None:
-            break
-        with open(grammar, 'a') as fout:
-            print('adding rule', rule.as_str())
-            fout.write(rule.as_str() + '\n')
-        apply_grammar(grammar, infile, f'output/{n}.txt')
-        infile = f'output/{n}.txt'
-        n += 1
+    import cProfile
+    with cProfile.Profile() as pr:
+        main(source, target, grammar)
+        pr.dump_stats('blah.prof')
