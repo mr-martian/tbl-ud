@@ -87,6 +87,13 @@ class Cohort:
         for op in product(*values):
             yield Cohort(**dict(zip(keys, op)))
 
+    def match(self, other):
+        return (self.source_lemma in ['', other.source_lemma] and
+                set(self.source_tags) <= set(other.source_tags) and
+                self.target_lemma in ['', other.target_lemma] and
+                set(self.target_tags) <= set(other.target_tags) and
+                self.relation in ['', other.relation])
+
 @dataclass
 class Sentence:
     words: list[Cohort] = field(default_factory=list)
@@ -118,6 +125,21 @@ class Sentence:
         for i, w in enumerate(self.words):
             ret[w.lemma_and_pos].append(i)
         return ret
+
+    def parent(self, word_idx: int):
+        for c in self.words:
+            if c.pos == self.words[word_idx].head:
+                return c
+
+    def children(self, word_idx: int):
+        for c in self.words:
+            if c.head == self.words[word_idx].pos:
+                yield c
+
+    def siblings(self, word_idx: int):
+        for c in self.words:
+            if c.head == self.words[word_idx].head:
+                yield c
 
 def read_stream(fin):
     cur_sent = Sentence()
@@ -155,6 +177,8 @@ class Context:
         return f'({self.position} {self.cohort.as_pattern})'
 
     def make_rule(self, target: Cohort, fout):
+        if 'NEGATE' in self.position:
+            return
         fout.write(f'ADDRELATION (ctx) {target.as_pattern} TO {self.in_rule} ;\n')
 
 @dataclass
@@ -163,6 +187,9 @@ class Rule:
     params: str = ''
     target: Cohort = field(default_factory=Cohort)
     context: list[Context] = field(default_factory=list)
+    examples: list[tuple[int, int]] = field(default_factory=list)
+    negative: list[int] = field(default_factory=list)
+    score: int = 0
 
     def as_str(self):
         if self.rule == 'REMCOHORT':
@@ -172,6 +199,27 @@ class Rule:
             ret += ' ;'
             return ret
 
+@dataclass
+class Corpus:
+    source: list[Sentence] = field(default_factory=list)
+    target: list[Sentence] = field(default_factory=list)
+    scores: list[int] = field(default_factory=list)
+    rules: dict[str, Rule] = field(default_factory=dict)
+    by_score: defaultdict = field(default_factory=lambda: defaultdict(list))
+
+    def __len__(self):
+        return min(len(self.source), len(self.target))
+
+    def add_rule(self, rule: Rule, infile: str):
+        key = rule.as_str()
+        if key in self.rules:
+            self.rules[key].examples += rule.examples
+            return
+        score_rule(rule, infile, self)
+        self.rules[key] = rule
+        self.by_score[rule.score].append(key)
+        print('  ', key, rule.score, len(rule.negative))
+
 possible_rules = [('REMCOHORT', '')]
 possible_positions = ['p']
 max_context = 3
@@ -180,21 +228,25 @@ def all_positions():
     for i in range(1, max_context+1):
         yield from combinations(possible_positions, i)
 
-def generate_deletion_rules(sentence, idx):
-    target = sentence.words[idx]
+def generate_deletion_rules(corpus: Corpus, sent_idx: int, word_idx: int):
+    sentence = corpus.source[sent_idx]
+    target = sentence.words[word_idx]
     for target_set in target.possible_contexts():
         if target_set.as_pattern == '(*)':
             continue
-        yield Rule(rule='REMCOHORT', target=target_set)
+        yield Rule(rule='REMCOHORT', target=target_set,
+                   examples=[(sent_idx, word_idx)])
 
-def generate_rules(current, target):
+def generate_rules(corpus: Corpus, sent_idx: int):
+    current = corpus.source[sent_idx]
+    target = corpus.target[sent_idx]
     cdict = current.get_word_set()
     tdict = target.get_word_set()
     deletable = []
     for word in cdict:
         if word not in tdict or len(cdict[word]) > len(tdict[word]):
             for d in cdict[word]:
-                yield from generate_deletion_rules(current, d)
+                yield from generate_deletion_rules(corpus, sent_idx, d)
 
 def apply_grammar(grammar: str, infile: str, outfile: str) -> None:
     subprocess.run(
@@ -202,7 +254,7 @@ def apply_grammar(grammar: str, infile: str, outfile: str) -> None:
         capture_output=True,
     )
 
-def run_rule(rule, infile):
+def run_rule(rule: Rule, infile: str):
     with tempfile.NamedTemporaryFile('w+') as grammar:
         for ctx in rule.context:
             ctx.make_rule(rule.target, grammar)
@@ -212,9 +264,11 @@ def run_rule(rule, infile):
             apply_grammar(grammar.name, infile, outfile.name)
             yield from read_stream(outfile)
 
-def load_corpus(src_fname, tgt_fname):
+def load_corpus(src_fname: str, tgt_fname: str) -> Corpus:
     with open(src_fname) as fsrc, open(tgt_fname) as ftgt:
-        return list(zip(read_stream(fsrc), read_stream(ftgt)))
+        c = Corpus(list(read_stream(fsrc)), list(read_stream(ftgt)))
+        c.scores = [score_example(s, t) for s, t in zip(c.source, c.target)]
+        return c
 
 def score_example(pred, tgt):
     pw = pred.get_word_set()
@@ -230,40 +284,46 @@ def score_example(pred, tgt):
             score += len(pw[k])
     return score
 
-def score_rule(rule, infile, corpus):
-    score = 0
-    misfires = []
-    for (src, tgt), out in zip(corpus, run_rule(rule, infile)):
-        old = score_example(src, tgt)
-        new = score_example(out, tgt)
+def score_rule(rule: Rule, infile: str, corpus: Corpus) -> None:
+    rule.score = 0
+    rule.negative = []
+    for i, out in enumerate(run_rule(rule, infile)):
+        old = corpus.scores[i]
+        new = score_example(out, corpus.target[i])
         if new > old:
-            misfires.append((src, tgt, out))
-        score += (new - old)
-    return score, misfires
+            rule.negative.append(i)
+        rule.score += (new - old)
+
+def generate_negative_rules(corpus: Corpus, rule: Rule):
+    for m in rule.negative:
+        for i, w in enumerate(corpus.source[m].words):
+            if rule.target.match(w):
+                for s in corpus.source[m].siblings(i):
+                    for pc in s.possible_contexts():
+                        yield Rule(
+                            rule.rule, rule.params, rule.target,
+                            rule.context + [Context('NEGATE s', pc)],
+                        )
 
 def main(infile, outfile):
     corpus = load_corpus(infile, outfile)
-    rules = {}
-    by_score = defaultdict(list)
-    for src, tgt in corpus:
-        for r in generate_rules(src, tgt):
-            k = r.as_str()
-            if k in rules:
-                continue
-            score, miss = score_rule(r, infile, corpus)
-            rules[k] = (r, score, miss)
-            by_score[score].append(k)
-            # TODO: negative contexts
-            print('  ', k, score, len(miss))
-    best = min(by_score.keys())
-    if best >= 0:
+    for i in range(len(corpus)):
+        for r in generate_rules(corpus, i):
+            corpus.add_rule(r, infile)
+    keys = sorted(corpus.rules.keys())
+    for k in keys:
+        r = corpus.rules[k]
+        for nr in generate_negative_rules(corpus, r):
+            corpus.add_rule(nr, infile)
+    if not corpus.rules:
+        print('  No further rules generated')
         return None
-    return rules[by_score[best][0]][0]
+    best = min(corpus.by_score.keys())
+    if best >= 0:
+        print('  No rules provide a net benefit')
+        return None
+    return corpus.rules[corpus.by_score[best][0]]
 
-# - for each cohort that needs to be changed
-#   - check misfires to see if we can generate negative contexts
-#   - cache rules so we don't rerun rules that get the same string
-# - add top rule
 # - for top N rules
 #   - check if independent from added rules
 #   - add if so
