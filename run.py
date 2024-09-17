@@ -71,21 +71,17 @@ class Cohort:
         return f'({" ".join(ls)})'
 
     def possible_contexts(self):
-        def combo(ls):
-            return chain.from_iterable(combinations(ls, i) for i in range(3))
-        components = [
-            ('source_lemma', sorted(set(['', self.source_lemma]))),
-            #('source_tags', combo(self.source_tags)),
-            # static tags don't exist for rule targets, so this is
-            # a bit more complicated - skip for now
-            ('target_lemma', sorted(set(['', self.target_lemma]))),
-            ('target_tags', combo(self.target_tags)),
-            ('relation', sorted(set(['', self.relation]))),
-        ]
-        keys = [x[0] for x in components]
-        values = [x[1] for x in components]
-        for op in product(*values):
-            yield Cohort(**dict(zip(keys, op)))
+        for rel in sorted(set(['', self.relation]), reverse=True):
+            ops = [0, 1, 2] if rel else [1, 2]
+            tag_ops = (combinations(self.target_tags, i) for i in ops)
+            for tags in chain.from_iterable(tag_ops):
+                yield Cohort(relation=rel, target_tags=tags)
+                if self.source_lemma:
+                    yield Cohort(relation=rel, target_tags=tags,
+                                 source_lemma=self.source_lemma)
+                if self.target_lemma:
+                    yield Cohort(relation=rel, target_tags=tags,
+                                 target_lemma=self.target_lemma)
 
     def match(self, other):
         return (self.source_lemma in ['', other.source_lemma] and
@@ -310,7 +306,7 @@ def main(infile, outfile):
     for i in range(len(corpus)):
         for r in generate_rules(corpus, i):
             corpus.add_rule(r, infile)
-    keys = sorted(corpus.rules.keys())
+    keys = list(corpus.rules.keys())
     for k in keys:
         r = corpus.rules[k]
         for nr in generate_negative_rules(corpus, r):
