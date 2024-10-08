@@ -42,7 +42,12 @@ class Learner:
         with (tempfile.TemporaryDirectory() as tmpdir,
               concurrent.futures.ThreadPoolExecutor() as executor):
             future_to_rule = {}
+            seen = set()
             for r in rule_gen:
+                k = r.as_str()
+                if k in seen:
+                    continue
+                seen.add(k)
                 rule_count += 1
                 fout = os.path.join(tmpdir, f'out.{rule_count}.txt')
                 future = executor.submit(run_rule, r, self.infile, fout)
