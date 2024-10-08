@@ -1,8 +1,10 @@
 from stream import Sentence
-from rules import Corpus, Rule, apply_grammar
+from rules import Corpus, Rule, apply_grammar, run_rule
 
 import argparse
+import concurrent.futures
 import os
+import tempfile
 
 class Learner:
     def __init__(self):
@@ -22,19 +24,38 @@ class Learner:
     def score_example(pred: Sentence, tgt: Sentence) -> int:
         return 0
 
-    def next_rule(self):
-        corpus = Corpus.load(self.infile, self.outfile, self.score_example)
+    def positive_rules(self, corpus):
         for i in range(len(corpus)):
             if corpus.scores[i] == 0:
                 continue
-            for r in self.generate_rules(corpus.source[i], corpus.target[i], i):
-                corpus.add_rule(r, self.infile, self.score_example)
-        keys = list(corpus.rules.keys())
+            yield from self.generate_rules(corpus.source[i], corpus.target[i], i)
+
+    def negative_rules(self, keys, corpus):
         for k in keys:
             r = corpus.rules[k]
             for i in r.negative:
-                for nr in self.generate_negative_rules(r, corpus.source[i], corpus.target[i]):
-                    corpus.add_rule(nr, self.infile, self.score_example)
+                yield from self.generate_negative_rules(r, corpus.source[i],
+                                                        corpus.target[i])
+
+    def add_rules(self, corpus, rule_gen):
+        rule_count = 0
+        with (tempfile.TemporaryDirectory() as tmpdir,
+              concurrent.futures.ThreadPoolExecutor() as executor):
+            future_to_rule = {}
+            for r in rule_gen:
+                rule_count += 1
+                fout = os.path.join(tmpdir, f'out.{rule_count}.txt')
+                future = executor.submit(run_rule, r, self.infile, fout)
+                future_to_rule[future] = (r, fout)
+            for future in concurrent.futures.as_completed(future_to_rule):
+                r, fout = future_to_rule[future]
+                corpus.add_rule(r, fout, self.score_example)
+
+    def next_rule(self):
+        corpus = Corpus.load(self.infile, self.outfile, self.score_example)
+        self.add_rules(corpus, self.positive_rules(corpus))
+        keys = list(corpus.rules.keys())
+        self.add_rules(corpus, self.negative_rules(keys, corpus))
         if not corpus.rules:
             print('  No further rules generated')
             return []

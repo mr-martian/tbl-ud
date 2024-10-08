@@ -56,15 +56,13 @@ def apply_grammar(grammar: str, infile: str, outfile: str, trace: bool = True) -
         capture_output=True,
     )
 
-def run_rule(rule: Rule, infile: str):
+def run_rule(rule: Rule, infile: str, outfile: str):
     with tempfile.NamedTemporaryFile('w+') as grammar:
         for ctx in rule.context:
             ctx.make_rule(rule.target, grammar)
         grammar.write(rule.as_str())
         grammar.flush()
-        with tempfile.NamedTemporaryFile('w+') as outfile:
-            apply_grammar(grammar.name, infile, outfile.name)
-            yield from read_stream(outfile)
+        apply_grammar(grammar.name, infile, outfile)
 
 @dataclass
 class Corpus:
@@ -77,7 +75,7 @@ class Corpus:
     def __len__(self):
         return min(len(self.source), len(self.target))
 
-    def add_rule(self, rule: Rule, infile: str, score_example):
+    def add_rule(self, rule: Rule, outfile: str, score_example):
         key = rule.as_str()
         if key in self.rules:
             self.rules[key].examples += rule.examples
@@ -85,14 +83,15 @@ class Corpus:
 
         rule.score = 0
         rule.negative = []
-        for i, out in enumerate(run_rule(rule, infile)):
-            old = self.scores[i]
-            new = score_example(out, self.target[i])
-            if new > old:
-                rule.negative.append(i)
-            rule.score += (new - old)
-            rule.relevant.update(out.relevant)
-            rule.affected.update(out.affected)
+        with open(outfile) as fin:
+            for i, out in enumerate(read_stream(fin)):
+                old = self.scores[i]
+                new = score_example(out, self.target[i])
+                if new > old:
+                    rule.negative.append(i)
+                rule.score += (new - old)
+                rule.relevant.update(out.relevant)
+                rule.affected.update(out.affected)
 
         self.rules[key] = rule
         self.by_score[rule.score].append(key)
