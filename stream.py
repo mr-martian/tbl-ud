@@ -9,12 +9,12 @@ class Cohort:
     target_tags: list[str] = field(default_factory=list)
     relation: str = ''
     pos: int = 0
-    head: int = 0
+    head: int = -1
     id: int = 0
     relation_id: int = 0
     target: bool = False
     relevant: bool = False
-    context: set[int] = field(default_factory=set)
+    context: set[tuple[int, int]] = field(default_factory=set)
 
     def add_line(self, line):
         for piece in line.split():
@@ -34,8 +34,9 @@ class Cohort:
                 a, b = piece[1:].split('->')
                 self.pos = int(a)
                 self.head = int(b)
-            elif piece.startswith('R:ctx:'):
-                self.context.add(int(piece[6:]))
+            elif piece.startswith('R:ctx'):
+                i, p = piece[5:].split(':')
+                self.context.add((int(i), int(p)))
             elif piece.startswith('ID:'):
                 self.relation_id = int(piece[3:])
             elif piece.startswith('WID:'):
@@ -82,6 +83,14 @@ class Cohort:
                     yield Cohort(relation=rel, target_tags=tags,
                                  target_lemma=self.target_lemma)
 
+    def possible_contexts_single(self):
+        if self.relation:
+            yield Cohort(relation=self.relation)
+        if self.target_tags:
+            yield Cohort(target_tags=[self.target_tags[0]])
+            #for tg in self.target_tags[1:]:
+            #    yield Cohort(target_tags=[self.target_tags[0], tg])
+
     def match(self, other):
         return (self.source_lemma in ['', other.source_lemma] and
                 set(self.source_tags) <= set(other.source_tags) and
@@ -105,10 +114,10 @@ class Sentence:
         if word.relation_id:
             if word.relation_id in self.context:
                 word.relevant = True
-        for i in word.context:
-            if i in self.relation_id2idx:
-                self.words[self.relation_id2idx[i]].relevant = True
-            self.context.add(i)
+        for i, w in word.context:
+            if w in self.relation_id2idx:
+                self.words[self.relation_id2idx[w]].relevant = True
+            self.context.add(w)
         self.words.append(word)
 
     def __len__(self):
