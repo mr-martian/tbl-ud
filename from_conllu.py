@@ -7,6 +7,7 @@ parser.add_argument('conllu')
 parser.add_argument('rel')
 parser.add_argument('norel')
 parser.add_argument('--max', '-m', type=int, default=None)
+parser.add_argument('--mode', choices=['rel', 'type'], default='rel')
 args = parser.parse_args()
 
 with open(args.conllu) as fin, open(args.rel, 'w') as frel, open(args.norel, 'w') as fnorel:
@@ -23,7 +24,14 @@ with open(args.conllu) as fin, open(args.rel, 'w') as frel, open(args.norel, 'w'
             out = f'"<{cols[1]}>"\n\t"{cols[2]}" tgt:{cols[3]} WID:{wid}'
             if cols[5] != '_':
                 out += ' tgt:' + cols[5].replace('|', ' tgt:')
-            frel.write(f'{out} #{cols[0]}->{cols[0]}\n')
-            fnorel.write(f'{out} @{cols[7]} #{cols[0]}->{cols[6]}\n')
+            if args.mode == 'rel':
+                fnorel.write(f'{out} #{cols[0]}->{cols[0]}\n')
+                frel.write(f'{out} @{cols[7]} #{cols[0]}->{cols[6]}\n')
+            elif args.mode == 'type':
+                t = ''
+                if 'Type=' in cols[9]:
+                    t = ' %' + cols[9].split('Type=')[1].split('|')[0]
+                fnorel.write(f'{out} @{cols[7]} #{cols[0]}->{cols[6]}\n')
+                frel.write(f'{out}{t} @{cols[7]} #{cols[0]}->{cols[6]}\n')
         frel.write('\n')
         fnorel.write('\n')

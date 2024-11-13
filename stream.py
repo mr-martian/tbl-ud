@@ -8,6 +8,7 @@ class Cohort:
     target_lemma: str = ''
     target_tags: list[str] = field(default_factory=list)
     relation: str = ''
+    label: str = ''
     pos: int = 0
     head: int = -1
     id: int = 0
@@ -26,6 +27,8 @@ class Cohort:
                     self.target_lemma = lm
             elif piece.startswith('@'):
                 self.relation = piece[1:]
+            elif piece.startswith('%'):
+                self.label = piece[1:]
             elif piece.startswith('src:'):
                 self.source_tags.append(piece[4:])
             elif piece.startswith('tgt:'):
@@ -98,6 +101,13 @@ class Cohort:
                 set(self.target_tags) <= set(other.target_tags) and
                 self.relation in ['', other.relation])
 
+    def pos_context(self):
+        return Cohort(target_tags=[self.target_tags[0]])
+
+    def lemma_pos_context(self):
+        return Cohort(target_lemma=self.target_lemma,
+                      target_tags=[self.target_tags[0]])
+
 @dataclass
 class Sentence:
     words: list[Cohort] = field(default_factory=list)
@@ -154,6 +164,13 @@ class Sentence:
     @property
     def affected(self):
         return set(w.id for w in self.words if w.target)
+
+    def paired_words(self, other):
+        for wid, i in self.id2idx.items():
+            if (oi := other.id2idx.get(wid)) is not None:
+                yield self.words[i], other.words[oi]
+            else:
+                yield self.words[i], None
 
 def read_stream(fin):
     cur_sent = Sentence()

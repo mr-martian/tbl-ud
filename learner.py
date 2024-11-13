@@ -11,6 +11,8 @@ MAX_RULES = 1000
 MIN_BENEFIT = 2
 
 class Learner:
+    mapping_prefix = '@'
+
     def __init__(self):
         self.infile = None
         self.outfile = None
@@ -61,7 +63,7 @@ class Learner:
             added = True
             fout = os.path.join(tmpdir, f'out.{rule_count:05}.txt')
             future = executor.submit(corpus.test_rule, r, self.infile, fout,
-                                     self.score_example)
+                                     self.score_example, self.mapping_prefix)
             future_to_rule[future] = r
             new.append(k)
             if rule_count > MAX_RULES:
@@ -71,7 +73,7 @@ class Learner:
             k = r.as_str()
             self.rules[k] = r
             self.by_score[r.score].append(k)
-            print(f'    tried {k.replace("\n", " ")}; {r.score=}')
+            print(f'    tried {k.replace("\n", " ")} {r.score=}, {len(r.positive)=}, {len(r.negative)=}')
         return new
 
     def add_rules(self, corpus):
@@ -124,7 +126,12 @@ class Learner:
         i = 0
         self.infile = os.path.join(args.dir, f'step00000.txt')
         if os.path.isfile(self.grammar):
-            apply_grammar(self.grammar, args.source, self.infile, trace=False)
+            apply_grammar(self.grammar, args.source, self.infile, trace=False, prefix=self.mapping_prefix)
+        elif hasattr(self, 'baseline_rules'):
+            corpus = Corpus.load(args.source, self.outfile, self.score_example)
+            with open(self.grammar, 'w') as fout:
+                self.baseline_rules(corpus, fout)
+            apply_grammar(self.grammar, args.source, self.infile, trace=False, prefix=self.mapping_prefix)
         else:
             with open(args.source) as fin, open(self.infile, 'w') as fout:
                 fout.write(fin.read())
@@ -139,4 +146,4 @@ class Learner:
                     fout.write('\n' + s + '\n')
             i += 1
             self.infile = os.path.join(args.dir, f'step{i:05}.txt')
-            apply_grammar(self.grammar, args.source, self.infile, trace=False)
+            apply_grammar(self.grammar, args.source, self.infile, trace=False, prefix=self.mapping_prefix)

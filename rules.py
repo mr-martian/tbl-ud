@@ -20,10 +20,10 @@ class Context:
         ir = self.in_rule.replace('NEGATE', '')
         fout.write(f'ADDRELATION (ctx{num}) {target.as_pattern} TO {ir} ;\n')
 
-def apply_grammar(grammar: str, infile: str, outfile: str, trace: bool = True) -> None:
+def apply_grammar(grammar: str, infile: str, outfile: str, trace: bool = True, prefix: str = '@') -> None:
     tr = ['--trace'] if trace else []
     subprocess.run(
-        ['vislcg3', '-g', grammar, '-I', infile, '-O', outfile, '--dep-delimit', '--print-ids'] + tr,
+        ['vislcg3', '-g', grammar, '-I', infile, '-O', outfile, '--dep-delimit', '--print-ids', '--prefix', prefix] + tr,
         capture_output=True,
     )
 
@@ -91,13 +91,13 @@ class Rule:
             yield self.ctx_target
         yield from self.ctx_context
 
-    def run(self, infile: str, outfile: str):
+    def run(self, infile: str, outfile: str, prefix: str = '@'):
         with tempfile.NamedTemporaryFile('w+') as grammar:
             for i, ctx in enumerate(self.all_context(), 1):
                 ctx.make_rule(self.target, grammar, i)
             grammar.write(self.as_str())
             grammar.flush()
-            apply_grammar(grammar.name, infile, outfile)
+            apply_grammar(grammar.name, infile, outfile, prefix=prefix)
 
     def add_test(self, test: Context):
         for i, c in enumerate(self.context):
@@ -120,15 +120,19 @@ class Corpus:
     def __len__(self):
         return min(len(self.source), len(self.target))
 
-    def test_rule(self, rule: Rule, infile: str, outfile: str, score_example):
-        rule.run(infile, outfile)
+    def test_rule(self, rule: Rule, infile: str, outfile: str, score_example, prefix: str = '@'):
+        rule.run(infile, outfile, prefix=prefix)
         rule.score = 0
-        rule.negative = []
+        rule.negative = set()
         with open(outfile) as fin:
             for i, out in enumerate(read_stream(fin)):
                 old = self.scores[i]
                 new = score_example(out, self.target[i])
-                if new > old:
+                if isinstance(new, tuple):
+                    new, pos, neg = new
+                    rule.positive.update(pos)
+                    rule.negative.update(neg)
+                elif new > old:
                     rule.negative.update(out.affected)
                 else:
                     rule.positive.update(out.affected)
@@ -141,6 +145,8 @@ class Corpus:
         with open(src_fname) as fsrc, open(tgt_fname) as ftgt:
             c = Corpus(list(read_stream(fsrc)), list(read_stream(ftgt)))
             c.scores = [score_example(s, t) for s, t in zip(c.source, c.target)]
+            if c.scores and isinstance(c.scores[0], tuple):
+                c.scores = [s[0] for s in c.scores]
             for i in range(len(c)):
                 for j in c.target[i].id2idx.keys():
                     c.id2sent[j] = i
