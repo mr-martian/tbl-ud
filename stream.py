@@ -91,8 +91,8 @@ class Cohort:
             yield Cohort(relation=self.relation)
         if self.target_tags:
             yield Cohort(target_tags=[self.target_tags[0]])
-            #for tg in self.target_tags[1:]:
-            #    yield Cohort(target_tags=[self.target_tags[0], tg])
+            for tg in self.target_tags[1:]:
+                yield Cohort(target_tags=[self.target_tags[0], tg])
 
     def match(self, other):
         return (self.source_lemma in ['', other.source_lemma] and
@@ -156,6 +156,18 @@ class Sentence:
         for c in self.words:
             if c.head == self.words[word_idx].head:
                 yield c
+
+    def roots(self):
+        for c in self.words:
+            if c.head == 0:
+                yield c
+
+    def descendants(self, word_idx: int):
+        todo = list(self.children(word_idx))
+        while todo:
+            c = todo.pop()
+            yield c
+            todo += list(self.children(c.pos))
 
     @property
     def relevant(self):

@@ -63,7 +63,7 @@ class Rule:
             ctx += self.context
             ctx += [replace(c, position=c.position+'x') for c in self.ctx_context]
             return textwrap.dedent(f'''\
-            WITH REMEMBERX KEEPORDER {self.target.as_pattern}
+            WITH REMEMBERX {self.target.as_pattern}
                 IF (NOT p (*)) {self.context_str(ctx, False)} {{
               MAP ({self.params}) (*) ;
               SETPARENT (*) TO (jC1 (*)) ;
@@ -73,7 +73,7 @@ class Rule:
             ctx += self.context
             ctx += [replace(c, position=c.position+'x') for c in self.ctx_context]
             return textwrap.dedent(f'''\
-            WITH REMEMBERX KEEPORDER {self.target.as_pattern}
+            WITH REMEMBERX {self.target.as_pattern}
                 IF (NOT p (*)) {self.context_str(ctx, False)} {{
               SUBSTITUTE ({self.params[0]}) ({self.params[1]}) (*) ;
               SETPARENT (*) TO (jC1 (*)) ;

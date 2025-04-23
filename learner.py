@@ -74,6 +74,7 @@ class Learner:
             self.rules[k] = r
             self.by_score[r.score].append(k)
             print(f'    tried {k.replace("\n", " ")} {r.score=}, {len(r.positive)=}, {len(r.negative)=}')
+        # TODO: beam search based on len(pos) and/or len(neg)?
         return new
 
     def add_rules(self, corpus):

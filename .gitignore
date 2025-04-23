@@ -1,0 +1,6 @@
+env
+*.bin
+__pycache__
+steps
+*.json
+generated
