@@ -1,4 +1,5 @@
 import argparse
+import collections
 import json
 import xml.etree.ElementTree as ET
 
@@ -28,6 +29,7 @@ with open(args.align) as fin:
                 continue
             word_pairs.add((tuple(w1), tuple(w2)))
 
+tag_pairs = collections.Counter()
 dix = ET.Element('dictionary')
 ET.SubElement(dix, 'alphabet')
 sdefs = ET.SubElement(dix, 'sdefs')
@@ -49,9 +51,11 @@ for w1, w2 in sorted(word_pairs, key=str):
         if t is None: continue
         tags.add(t)
         ET.SubElement(r, 's', n=t)
+    tag_pairs[(w1[1], w2[1])] += 1
 for t in sorted(tags):
     ET.SubElement(sdefs, 'sdef', n=t)
 ET.indent(sdefs, level=1)
 with open(args.out, 'wb') as fout:
     tree = ET.ElementTree(dix)
     tree.write(fout, encoding='utf-8', xml_declaration=True)
+print(tag_pairs.most_common())
