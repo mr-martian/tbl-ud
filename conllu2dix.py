@@ -32,16 +32,14 @@ for sent in utils.conllu_sentences(sys.stdin):
         continue
     line = []
     for word in utils.conllu_words(sent):
-        feats = {n: utils.conllu_feature_dict(word[n]) for n in dictify}
+        feats = {n: utils.conllu_feature_dict(word[n], with_prefix=True)
+                 for n in dictify}
         ls = []
         for n, k in features:
             if k is None:
                 ls.append(word[n])
             else:
-                v = feats[n].get(k)
-                if v:
-                    v = k + '=' + v
-                ls.append(v)
+                ls.append(feats[n].get(k))
         line.append(ids[tuple(ls)])
         print(word[2], end=' ')
     corpus.append(line)

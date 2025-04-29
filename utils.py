@@ -26,13 +26,16 @@ def conllu_sentences(fin):
 def conllu_words(sent):
     for line in sent:
         if line.count('\t') == 9 and line.split('\t', 1)[0].isdigit():
-            yield line.split('\t')
+            yield line.strip().split('\t')
 
-def conllu_feature_dict(field):
+def conllu_feature_dict(field, with_prefix=False):
     if field == '_':
         return {}
     ret = {}
     for piece in field.split('|'):
+        if '=' not in piece:
+            import sys
+            print([piece, field], file=sys.stderr)
         k, v = piece.split('=', 1)
-        ret[k] = v
+        ret[k] = piece if with_prefix else v
     return ret
