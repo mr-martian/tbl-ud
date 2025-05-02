@@ -39,3 +39,8 @@ def conllu_feature_dict(field, with_prefix=False):
         k, v = piece.split('=', 1)
         ret[k] = piece if with_prefix else v
     return ret
+
+def get_id(sentence):
+    for line in sentence:
+        if line.startswith('# sent_id ='):
+            return line.split('=')[1].strip()

@@ -137,7 +137,7 @@ def cohort_distance(c1, c2):
             dist += 1
     return dist
 
-def best_alignment(s1, s2):
+def best_alignment(s1, s2, word_alignments):
     pos_list = set(s1.by_upos.keys()) & set(s2.by_upos.keys())
     print(s1.by_upos)
     print(s2.by_upos)
@@ -147,6 +147,8 @@ def best_alignment(s1, s2):
         for i1 in s1.by_upos[u]:
             for i2 in s2.by_upos[u]:
                 possible[i1][i2] = cohort_distance(s1.words[i1], s2.words[i2])
+                if i1 in word_alignments and i2 not in word_alignments[i1] and possible[i1][i2] > 0:
+                    del possible[i1][i2]
     print(possible)
 
     @functools.cache
@@ -158,7 +160,7 @@ def best_alignment(s1, s2):
 
     cache = collections.defaultdict(list)
     debug = False
-    BEAM = 30
+    BEAM = 1
     UNALIGNED_PENALTY = 3
     def check_subtree(i1, i2, flip):
         nonlocal cache
@@ -243,12 +245,21 @@ def best_alignment(s1, s2):
         print(i1, i2, s1.words[i1].source.lemma, s2.words[i2].source.lemma)
     #print(cache)
 
+def read_alignments(fin):
+    for line in fin:
+        d = collections.defaultdict(list)
+        for piece in line.split():
+            a, b = piece.split('-')
+            d[int(a)].append(int(b))
+        yield d
+
 if __name__ == '__main__':
     import sys
-    with open(sys.argv[1]) as f1, open(sys.argv[2]) as f2:
-        for i, (s1, s2) in enumerate(zip(read_stream(f1), read_stream(f2))):
+    with open(sys.argv[1]) as f1, open(sys.argv[2]) as f2, open(sys.argv[3]) as f3:
+        for i, (s1, s2, align) in enumerate(zip(read_stream(f1), read_stream(f2), read_alignments(f3))):
             #print(s1)
             #print(s2)
-            print(best_alignment(s1, s2))
-            if i == 3:
+            print(best_alignment(s1, s2, align))
+            print(i, file=sys.stderr)
+            if i == 7:
                 break

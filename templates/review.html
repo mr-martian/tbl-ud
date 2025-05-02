@@ -1,0 +1,79 @@
+<!doctype html>
+<html>
+  <head>
+    <title>Review Alignments</title>
+    <style>
+      form {
+	  display: inline;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>{{sid}}</h1>
+    <p>
+      {% if prev %}<a href="/?index={{prev}}">Previous</a>{% endif %}
+      {{idx}} / {{total}} ({{len_todo}} incomplete)
+      {% if next %}<a href="/?index={{next}}">Next</a>{% endif %}
+    </p>
+    <button onclick="save();">Save</button>
+    <p>Unaligned Greek:</p>
+    <ul>
+      {% for ua in unaligned %}
+      <li>
+	{{ua.0}} {{ua.1}}
+	<form action="/?index={{idx}}" method="POST">
+	  <input type="hidden" name="tl" value="{{ua.0}}"/>
+	  <input type="hidden" name="tu" value="{{ua.1}}"/>
+	  <button type="submit">Null</button>
+	</form>
+      </li>
+      {% endfor %}
+    </ul>
+    {% for word in words %}
+    <details {% if not word.linked and not word.nulllink %}open{% endif %}>
+      <summary>
+	{{word.src.lemma}} {{word.src.upos}} {{word.src.gloss}}
+	{% if word.linked or word.nulllink %}✅{% endif %}
+      </summary>
+      <ul>
+	{% for tgt in word.tgt %}
+	<li>
+	  {% if not tgt.revlinked %}❓{% endif %}
+	  {{tgt.lemma}} {{tgt.upos}} {{tgt.gloss}}
+	  {% if tgt.linked %}
+	  ✅
+	  {% else %}
+	  <form action="/?index={{idx}}" method="POST">
+	    <input type="hidden" name="sl" value="{{word.src.lemma}}"/>
+	    <input type="hidden" name="su" value="{{word.src.upos}}"/>
+	    <input type="hidden" name="tl" value="{{tgt.lemma}}"/>
+	    <input type="hidden" name="tu" value="{{tgt.upos}}"/>
+	    <button type="submit">Link</button>
+	  </form>
+	  {% endif %}
+	</li>
+	{% endfor %}
+	<li>
+	  [nothing]
+	  {% if word.nulllink %}
+	  ✅
+	  {% else %}
+	  <form action="/?index={{idx}}" method="POST">
+	    <input type="hidden" name="sl" value="{{word.src.lemma}}"/>
+	    <input type="hidden" name="su" value="{{word.src.upos}}"/>
+	    <button type="submit">Link</button>
+	  </form>
+	  {% endif %}
+	</li>
+      </ul>
+    </details>
+    {% endfor %}
+    <script>
+      function save() {
+	  let req = new XMLHttpRequest();
+	  req.open('GET', '/save', true);
+	  req.send(null);
+      }
+    </script>
+  </body>
+</html>

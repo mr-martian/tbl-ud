@@ -29,6 +29,11 @@ cat generated/hbo-grc/grc.conllu | python3 conllu2dix.py generated/hbo-grc/grc.l
 #eflomal-align --overwrite -s hbo.align.txt -t grc.align.txt -f hbo-grc.align.txt
 python3 get_hbo_grc.py generated/hbo-grc/hbo.conllu generated/hbo-grc/grc.conllu > generated/hbo-grc/hbo-grc.align.txt
 
-python3 json2dix.py generated/hbo-grc/hbo.lex.json generated/hbo-grc/grc.lex.json generated/hbo-grc/hbo-grc.align.txt generated/hbo-grc/hbo-grc.dix
+python3 json2dix.py generated/hbo-grc/hbo.lex.json generated/hbo-grc/grc.lex.json generated/hbo-grc/hbo-grc.align.txt generated/hbo-grc/hbo-grc.dix -e CCONJ: -e DET: -e :DET -e VERB:CCONJ
 
 lt-comp lr generated/hbo-grc/hbo-grc.dix generated/hbo-grc/hbo-grc.bin
+
+cat generated/hbo-grc/hbo.conllu | python3 conllu2apertium.py HebBinyan Gender | lt-proc -b generated/hbo-grc/hbo-grc.bin | cg-conv -aC > generated/hbo-grc/hbo.cg3.txt
+cat generated/hbo-grc/grc.conllu | python3 conllu2apertium.py Gender | lt-proc -b generated/hbo-grc/hbo-grc.bin | cg-conv -aC > generated/hbo-grc/grc.cg3.txt
+
+python3 cohort.py generated/hbo-grc/hbo.cg3.txt generated/hbo-grc/grc.cg3.txt generated/hbo-grc/hbo-grc.align.txt
