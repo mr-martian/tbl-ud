@@ -44,3 +44,7 @@ def get_id(sentence):
     for line in sentence:
         if line.startswith('# sent_id ='):
             return line.split('=')[1].strip()
+
+def parallel_sentences(fname1, fname2):
+    with open(fname1) as f1, open(fname2) as f2:
+        yield from zip(conllu_sentences(f1), conllu_sentences(f2))
