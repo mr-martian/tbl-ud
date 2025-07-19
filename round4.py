@@ -20,7 +20,7 @@ COHORT_WEIGHT = 10
 READING_WEIGHT = 5
 FEATURE_WEIGHT = 1
 
-MAX_RULES = 10
+MAX_RULES = 100
 
 @dataclass(frozen=True, order=True)
 class Rule:
@@ -32,23 +32,24 @@ class Rule:
 
     templates = {
         'REMOVE': 'REMOVE ({tags}) IF (0 ({target})) {ctx} ;',
-        'APPEND': 'APPEND ({tags}) ({target}){ctx} ;',
-        'ADDCOHORT': 'ADDCOHORT ("<ins>" {tags}) BEFORE ({target}){ctx} ;',
-        'REMCOHORT': 'REMCOHORT ({target}){ctx} ;',
-        'REMCOHORT-center': 'WITH ({target}) IF (p (*)) {ctx} {{\n\tSWITCHPARENT WITHCHILD (*) (*) ;\n\tREMCOHORT _C1_ ;\n}} ;',
-        'SUBSTITUTE': 'SUBSTITUTE ({tags}) ({desttags}) ({target}){ctx} ;',
+        'APPEND': 'APPEND ({tags}) (*) IF (0 ({target})){ctx} ;',
+        'ADDCOHORT': 'ADDCOHORT ("<ins>" {tags}) BEFORE (*) IF (0 ({target})){ctx} ;',
+        'REMCOHORT': 'REMCOHORT (*) IF (0 ({target})){ctx} ;',
+        'REMCOHORT-center': 'WITH (*) IF (0 ({target})){ctx} {{\n\tSWITCHPARENT WITHCHILD (*) (*) ;\n\tREMCOHORT _C2_ ;\n}} ;',
+        'SUBSTITUTE': 'SUBSTITUTE ({tags}) ({desttags}) (*) IF (0 ({target})) {ctx} ;',
     }
 
     def as_relation_rule(self, key):
         ret = []
+        ret.append(f'ADDRELATION (t{key}) (*) (0 ({self.target})) TO (0 (*)) ;')
         for test in self.context:
-            ret.append(f'ADDRELATION ({key}) ({self.target}) TO ({test}) ;')
+            ret.append(f'ADDRELATION ({key}) (*) (0 ({self.target})) TO ({test}) ;')
         return '\n'.join(ret)
 
     def as_rule(self):
         ctx = ' '.join(f'({test})' for test in sorted(self.context))
-        if ctx and self.rtype not in ['REMCOHORT-center', 'REMOVE']:
-            ctx = ' IF ' + ctx
+        if ctx:
+            ctx = ' ' + ctx
         return self.templates[self.rtype].format(
             target=self.target, tags=self.tags, desttags=self.desttags,
             ctx=ctx)
@@ -61,9 +62,8 @@ class Learner:
         self.source = self.load_file(self.source_fname)
         self.target = self.load_file(self.target_fname)
 
-        #self.base_score = sum(self.score_window(s, t)
-        #                      for s, t in zip(self.source, self.target))
-        self.base_score = self.score_window(self.source[0], self.target[0])
+        self.base_score = sum(self.score_window(s, t)
+                              for s, t in zip(self.source, self.target))
 
     def load_file(self, fname: str):
         with open(fname, 'rb') as fin:
@@ -74,13 +74,14 @@ class Learner:
             cc = subprocess.run(['cg-comp', gpath, fgram.name],
                                 capture_output=True)
             cp = subprocess.run(
-                ['/home/daniel/apertium/cg3/src/cg-proc', '-f3',
+                [#'/home/daniel/apertium/cg3/src/cg-proc', '-f3',
+                    'bash', 'binformat_workaround.sh',
                  fgram.name, self.source_fname, opath],
                 capture_output=True)
-            if debug:
-                print('')
-                print(cc)
-                print(cp)
+            #if debug:
+            #    print('')
+            #    print(cc)
+            #    print(cp)
             with open(opath, 'rb') as fout:
                 yield from cg3.parse_binary_stream(fout)
 
@@ -91,14 +92,19 @@ class Learner:
         with open(gpath, 'w') as fout:
             for i, (s, r) in enumerate(rules):
                 fout.write(r.as_relation_rule(f'r{i}') + '\n')
+        #with open(gpath) as fin:
+        #    print('########################')
+        #    print(fin.read())
+        #    print('########################')
         targets = defaultdict(set)
         contexts = defaultdict(set)
         for window in self.run_grammar(gpath, opath, True):
             for cohort in window.cohorts:
-                for tag, heads in cohort.relations:
+                for tag, heads in cohort.relations.items():
                     if tag[0] == 'r' and tag[1:].isdigit():
                         contexts[int(tag[1:])].update(heads)
-                        targets[int(tag[1:])].add(cohort.dep_self)
+                    elif tag.startswith('tr') and tag[2:].isdigit():
+                        targets[int(tag[2:])].add(cohort.dep_self)
         intersections = [set() for i in range(len(rules))]
         for i in range(len(rules)):
             for j in range(i):
@@ -112,7 +118,7 @@ class Learner:
     def describe_cohort(self, cohort):
         yield f'{cohort.static.lemma} {cohort.static.tags[0]}'
 
-    def gen_contexts(self, slw, idx, dct):
+    def gen_contexts(self, slw, idx, dct, include_parent=False):
         ctx = []
         ds = slw.cohorts[idx].dep_self
         dh = slw.cohorts[idx].dep_parent
@@ -129,8 +135,11 @@ class Learner:
                     ctx.append(f'{rel} ({desc})')
         tgt = list(self.describe_cohort(slw.cohorts[idx]))
         for t in tgt:
-            yield Rule(target=t, **dct)
+            if not include_parent:
+                yield Rule(target=t, **dct)
             for c in ctx:
+                if include_parent and c[0] != 'p':
+                    continue
                 yield Rule(target=t, context=frozenset([c]), **dct)
 
     def gen_rules(self, slw: cg3.Window, tlw: cg3.Window):
@@ -143,17 +152,23 @@ class Learner:
         for idx, cohort in enumerate(slw.cohorts):
             words = set((r.lemma, r.tags[0]) for r in cohort.readings)
             if words.isdisjoint(tgt_words):
-                yield from self.gen_contexts(slw, idx, {
-                    'rtype': 'REMCOHORT-center' if any(
-                        c.dep_parent == cohort.dep_self
-                        for c in slw.cohorts) else 'REMCOHORT'})
+                children = [i for i, c in enumerate(slw.cohorts)
+                            if c.dep_parent == cohort.dep_self]
+                if children:
+                    for i in children:
+                        yield from self.gen_contexts(
+                            slw, i, {'rtype': 'REMCOHORT-center'},
+                            include_parent=True)
+                else:
+                    yield from self.gen_contexts(slw, idx,
+                                                 {'rtype': 'REMCOHORT'})
                 for m in missing:
                     yield from self.gen_contexts(slw, idx, {
                         'rtype': 'APPEND',
                         'tags': ' '.join(m),
                     })
             if len(words) > 1:
-                print('REMOVE', words, cohort)
+                #print('REMOVE', words, cohort)
                 for w in words:
                     yield from self.gen_contexts(slw, idx, {
                         'rtype': 'REMOVE',
@@ -185,11 +200,11 @@ class Learner:
     def score_rule(self, rule, gpath, opath):
         with open(gpath, 'w') as fout:
             fout.write('OPTIONS += addcohort-attach ;\n')
+            fout.write('DELIMITERS = "<$$$>" ;\n')
             fout.write(rule.as_rule())
         score = 0
         for slw, tlw in zip(self.run_grammar(gpath, opath), self.target):
             score += self.score_window(slw, tlw)
-            break
         return (score, rule)
 
     def generate(self):
@@ -216,16 +231,25 @@ class Learner:
             for future in concurrent.futures.as_completed(future_to_rule):
                 res = future.result()
                 print(res[0], res[1].as_rule())
-                if res[0] < self.base_score - 100: # TODO
+                if res[0] < self.base_score:
                     rules.append(res)
             rules.sort()
             gpath = os.path.join(tmpdir, 'intersection.cg3')
             opath = os.path.join(tmpdir, 'intersection_output.bin')
             intersections = self.calc_intersection(rules, gpath, opath)
+            #print(intersections)
             added = set()
+            effects = set()
             for i, (score, rule) in enumerate(rules):
                 if intersections[i] & added:
                     continue
+                if rule.rtype[0] == 'A':
+                    # don't add the same cohort or reading
+                    # multiple times in a single pass
+                    if rule.tags in effects:
+                        continue
+                    else:
+                        effects.add(rule.tags)
                 yield rule
                 added.add(i)
 
