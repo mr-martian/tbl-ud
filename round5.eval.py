@@ -18,6 +18,14 @@ import subprocess
 from tempfile import NamedTemporaryFile, TemporaryDirectory
 from typing import Optional
 
+PROFILE = False
+profiler = None
+
+if PROFILE:
+    import cProfile
+    profiler = cProfile.Profile()
+    profiler.enable()
+
 COHORT_WEIGHT = 10
 READING_WEIGHT = 5
 FEATURE_WEIGHT = 1
@@ -73,7 +81,7 @@ def calc_intersection(rules: list, gpath: str, opath: str):
         return []
     with open(gpath, 'w') as fout:
         for i, (s, r) in enumerate(rules):
-            fout.write(r[2].format(key=f'r{i}'))
+            fout.write(r[2] % i)
     targets = defaultdict(set)
     contexts = defaultdict(set)
     for window in run_grammar(gpath, opath):
@@ -117,9 +125,9 @@ def generate():
         rules = []
         print(base_score)
         print(tmpdir)
-        for future in concurrent.futures.as_completed(future_to_rule):
+        for i, future in enumerate(concurrent.futures.as_completed(future_to_rule)):
             res = future.result()
-            print(res[0], res[1][1])
+            print(f'{i:04}', res[0], res[1][1])
             if res[0] < base_score:
                 rules.append(res)
         rules.sort()
@@ -127,12 +135,22 @@ def generate():
         opath = os.path.join(tmpdir, 'intersection_output.bin')
         intersections = calc_intersection(rules, gpath, opath)
         added = set()
+        new_words = set()
         for i, (score, rule) in enumerate(rules):
             if intersections[i] & added:
                 continue
+            if rule[1][0] == 'A':
+                key = rule[1].split(')')[0]
+                if key in new_words:
+                    continue
+                new_words.add(key)
             yield rule
             added.add(i)
 
 with open(args.out, 'a') as fout:
     for r in generate():
         fout.write('\n' + r[1] + '\n')
+
+if PROFILE:
+    profiler.disable()
+    profiler.dump_stats('round5.eval.stats')
