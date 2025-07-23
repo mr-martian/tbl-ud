@@ -51,15 +51,17 @@ con = sqlite3.connect(args.db)
 cur = con.cursor()
 
 def score_window(slw, tlw):
-    score = abs(len(slw.cohorts) - len(tlw.cohorts)) * COHORT_WEIGHT
-    src_words = set((r.lemma, r.tags[0]) for c in slw.cohorts
-                    for r in c.readings)
-    tgt_words = set((r.lemma, r.tags[0]) for c in tlw.cohorts
-                    for r in c.readings)
-    score += READING_WEIGHT * (len(src_words) - len(slw.cohorts))
+    score = abs(len(slw.cohorts) - len(tlw.cohorts)) * 5
+    src_words = Counter((r.lemma, r.tags[0]) for c in slw.cohorts
+                        for r in c.readings)
+    tgt_words = Counter((r.lemma, r.tags[0]) for c in tlw.cohorts
+                        for r in c.readings)
+    extra = src_words - tgt_words
+    missing = tgt_words - src_words
+    score += 20 * missing.total()
+    score += 5 * extra.total()
+    score += 5 * (src_words.total() - len(slw.cohorts))
     # TODO: handle ambiguity on target side
-    score += COHORT_WEIGHT * len(src_words - tgt_words)
-    score += READING_WEIGHT * len(tgt_words - src_words)
     # TODO: feature mismatches
     return score
 
@@ -81,7 +83,7 @@ def calc_intersection(rules: list, gpath: str, opath: str):
         return []
     with open(gpath, 'w') as fout:
         for i, (s, r) in enumerate(rules):
-            fout.write(r[2] % i)
+            fout.write(r[2].replace('{NUM}', str(i)) + '\n')
     targets = defaultdict(set)
     contexts = defaultdict(set)
     for window in run_grammar(gpath, opath):
@@ -144,12 +146,13 @@ def generate():
                 if key in new_words:
                     continue
                 new_words.add(key)
-            yield rule
+            yield score, rule
             added.add(i)
 
 with open(args.out, 'a') as fout:
-    for r in generate():
-        fout.write('\n' + r[1] + '\n')
+    fout.write(f'# {base_score=}\n')
+    for s, r in generate():
+        fout.write(f'\n# {s}\n{r[1]}\n')
 
 if PROFILE:
     profiler.disable()

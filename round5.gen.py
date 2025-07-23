@@ -9,6 +9,7 @@ sys.path.insert(0, '/home/daniel/apertium/cg3/python')
 import cg3
 
 import argparse
+from collections import Counter
 import sqlite3
 
 parser = argparse.ArgumentParser()
@@ -38,14 +39,14 @@ def desc_c(cohort):
 
 for window, (slw, tlw) in enumerate(zip(source, target)):
     rules = []
-    src_words = set(desc_r(r) for c in slw.cohorts for r in c.readings)
-    tgt_words = set(desc_r(r) for c in tlw.cohorts for r in c.readings)
-    extra = src_words - tgt_words
-    missing = tgt_words - src_words
+    src_words = Counter(desc_r(r) for c in slw.cohorts for r in c.readings)
+    tgt_words = Counter(desc_r(r) for c in tlw.cohorts for r in c.readings)
+    extra = +(src_words - tgt_words)
+    missing = +(tgt_words - src_words)
     for idx, cohort in enumerate(slw.cohorts):
         suf = (window, idx, desc_c(cohort))
-        words = set(desc_r(r) for r in cohort.readings)
-        if words.isdisjoint(tgt_words):
+        words = [desc_r(r) for r in cohort.readings]
+        if all(w in extra for w in words):
             children = [(i, desc_c(c)) for i, c in enumerate(slw.cohorts)
                         if c.dep_parent == cohort.dep_self]
             if children:

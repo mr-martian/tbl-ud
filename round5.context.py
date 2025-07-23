@@ -59,9 +59,9 @@ def format_rule(rtype, target, tags=None, desttags=None, context=None):
 
 def format_relation(target, context):
     ret = []
-    ret.append(f'ADDRELATION (tr%s) (*) (0 ({target})) TO (0 (*)) ;')
+    ret.append(f'ADDRELATION (tr{{NUM}}) (*) (0 ({target})) TO (0 (*)) ;')
     for test in context:
-        ret.append(f'ADDRELATION (r%s) (*) (0 ({target})) TO ({test}) ;')
+        ret.append(f'ADDRELATION (r{{NUM}}) (*) (0 ({target})) TO ({test}) ;')
     return '\n'.join(ret)
 
 def make_rule(target, context, dct):
@@ -69,11 +69,14 @@ def make_rule(target, context, dct):
             format_relation(target, context))
 
 def describe_cohort(cohort):
-    yield f'{cohort.static.lemma} {cohort.static.tags[0]}'
+    if cohort.static.tags:
+        yield f'{cohort.static.lemma} {cohort.static.tags[0]}'
+        yield cohort.static.tags[0]
     for r in cohort.readings:
         for t in r.tags:
-            if '@' in t:
+            if t[0] == '@':
                 yield t
+                yield r.tags[0] + ' ' + t
         break
 
 def gen_contexts(slw, idx, dct, include_parent=False):
