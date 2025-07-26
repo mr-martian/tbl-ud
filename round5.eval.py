@@ -51,15 +51,16 @@ con = sqlite3.connect(args.db)
 cur = con.cursor()
 
 def score_window(slw, tlw):
-    score = abs(len(slw.cohorts) - len(tlw.cohorts)) * 5
+    score = 0
+    #score = abs(len(slw.cohorts) - len(tlw.cohorts)) * 5
     src_words = Counter((r.lemma, r.tags[0]) for c in slw.cohorts
                         for r in c.readings)
     tgt_words = Counter((r.lemma, r.tags[0]) for c in tlw.cohorts
                         for r in c.readings)
-    extra = src_words - tgt_words
+    #extra = src_words - tgt_words
     missing = tgt_words - src_words
     score += 20 * missing.total()
-    score += 5 * extra.total()
+    #score += 5 * extra.total()
     score += 5 * (src_words.total() - len(slw.cohorts))
     # TODO: handle ambiguity on target side
     # TODO: feature mismatches
@@ -67,7 +68,7 @@ def score_window(slw, tlw):
 
 base_score = sum(score_window(s, t) for s, t in zip(source, target))
 
-def run_grammar(gpath: str, opath: str):
+def old_run_grammar(gpath: str, opath: str):
     with NamedTemporaryFile() as fgram:
         cc = subprocess.run(['cg-comp', gpath, fgram.name],
                             capture_output=True)
@@ -77,6 +78,13 @@ def run_grammar(gpath: str, opath: str):
             capture_output=True)
         with open(opath, 'rb') as fout:
             yield from cg3.parse_binary_stream(fout)
+
+def run_grammar(gpath, opath):
+    subprocess.run(['/home/daniel/apertium/cg3/src/cg-proc',
+                    '-f3', gpath, args.source, opath],
+                   capture_output=True)
+    with open(opath, 'rb') as fout:
+        yield from cg3.parse_binary_stream(fout)
 
 def calc_intersection(rules: list, gpath: str, opath: str):
     if not rules:
