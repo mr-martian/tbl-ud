@@ -32,7 +32,7 @@ args = parser.parse_args()
 
 con = sqlite3.connect(args.db)
 cur = con.cursor()
-cur.execute('CREATE TABLE context(rule, relation, window)')
+cur.execute('CREATE TABLE context(rule TEXT PRIMARY KEY, relation, count INT DEFAULT 1)')
 con.commit()
 
 with open(args.source, 'rb') as fin:
@@ -124,8 +124,8 @@ for count, rule, tags1, tags2, ckey in patterns:
                 slw, cnum,
                 {'rtype': rule, 'tags': tags1, 'desttags': tags2},
                 include_parent=(rule == 'rem-parent')):
-            rules.append(r + (wnum,))
-    cur.executemany('INSERT INTO context VALUES(?, ?, ?)', rules)
+            rules.append(r)
+    cur.executemany('INSERT INTO context VALUES(?, ?, 1) ON CONFLICT(rule) DO UPDATE SET count = count + 1', rules)
     con.commit()
 
 if PROFILE:

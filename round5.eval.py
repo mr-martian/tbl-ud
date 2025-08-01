@@ -62,6 +62,7 @@ def score_window(slw, tlw):
     score += 20 * missing.total()
     #score += 5 * extra.total()
     score += 5 * (src_words.total() - len(slw.cohorts))
+    score += len([s for s in slw.cohorts if s.static.lemma == '"<ins>"'])
     # TODO: handle ambiguity on target side
     # TODO: feature mismatches
     return score
@@ -126,7 +127,7 @@ def generate():
           TemporaryDirectory() as tmpdir):
         seen = set()
         future_to_rule = {}
-        cur.execute('SELECT COUNT(*) as ct, rule, relation FROM context GROUP BY rule ORDER BY ct DESC LIMIT ?', (args.count,))
+        cur.execute('SELECT count, rule, relation FROM context ORDER BY count DESC LIMIT ?', (args.count,))
         for i, row in enumerate(cur.fetchall()):
             gpath = os.path.join(tmpdir, f'g{i:05}.cg3')
             opath = os.path.join(tmpdir, f'o{i:05}.bin')
