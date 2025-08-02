@@ -18,6 +18,8 @@ import subprocess
 from tempfile import NamedTemporaryFile, TemporaryDirectory
 from typing import Optional
 
+RTYPES = ['remove', 'append', 'addcohort', 'rem-self', 'rem-parent']
+
 PROFILE = False
 profiler = None
 
@@ -37,7 +39,7 @@ parser.add_argument('source')
 parser.add_argument('target')
 parser.add_argument('db')
 parser.add_argument('out')
-parser.add_argument('--count', type=int, default=1000,
+parser.add_argument('--count', type=int, default=25,
                     help='number of rules to try')
 args = parser.parse_args()
 
@@ -122,13 +124,17 @@ def score_rule(rule, gpath, opath):
         score += score_window(slw, tlw)
     return (score, rule)
 
+def get_rules():
+    for rt in RTYPES:
+        cur.execute('SELECT count, rule, relation FROM context WHERE rtype = ? ORDER BY count LIMIT ?', (rt, args.count))
+        yield from cur.fetchall()
+
 def generate():
     with (concurrent.futures.ThreadPoolExecutor() as executor,
           TemporaryDirectory() as tmpdir):
         seen = set()
         future_to_rule = {}
-        cur.execute('SELECT count, rule, relation FROM context ORDER BY count DESC LIMIT ?', (args.count,))
-        for i, row in enumerate(cur.fetchall()):
+        for i, row in enumerate(get_rules()):
             gpath = os.path.join(tmpdir, f'g{i:05}.cg3')
             opath = os.path.join(tmpdir, f'o{i:05}.bin')
             future = executor.submit(score_rule, row, gpath, opath)

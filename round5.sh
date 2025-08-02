@@ -10,6 +10,6 @@ date
 time ./round5.context.py generated/hbo-grc/hbo.input.bin generated/hbo-grc/grc.gold.bin hbo-grc.db
 echo "eval"
 date
-time ./round5.eval.py generated/hbo-grc/hbo.input.bin generated/hbo-grc/grc.gold.bin hbo-grc.db hbo-grc.round5.cg3 --count 100
+time ./round5.eval.py generated/hbo-grc/hbo.input.bin generated/hbo-grc/grc.gold.bin hbo-grc.db hbo-grc.round5.cg3 --count 200
 
 cat hbo-grc.round5.cg3

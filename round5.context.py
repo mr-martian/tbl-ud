@@ -13,6 +13,8 @@ from collections import Counter, defaultdict
 from itertools import combinations
 import sqlite3
 
+RTYPES = ['remove', 'append', 'addcohort', 'rem-self', 'rem-parent']
+
 PROFILE = False
 profiler = None
 
@@ -25,15 +27,17 @@ parser = argparse.ArgumentParser()
 parser.add_argument('source')
 parser.add_argument('target')
 parser.add_argument('db')
-parser.add_argument('--count', type=int, default=100,
+parser.add_argument('--count', type=int, default=25,
                     help='number of templates to expand')
 parser.add_argument('--ctx', type=int, default=2,
                     help='max context tests')
+parser.add_argument('--beam', type=int, default=25,
+                    help='max instantiations of a single pattern')
 args = parser.parse_args()
 
 con = sqlite3.connect(args.db)
 cur = con.cursor()
-cur.execute('CREATE TABLE context(rule TEXT PRIMARY KEY, relation, count INT DEFAULT 1)')
+cur.execute('CREATE TABLE context(rtype, rule TEXT, relation TEXT, count INT)')
 con.commit()
 
 with open(args.source, 'rb') as fin:
@@ -65,10 +69,6 @@ def format_relation(target, context):
         ret.append(f'ADDRELATION (r{{NUM}}) (*) (0 ({target})) TO ({test}) ;')
     # TODO: NEGATE
     return '\n'.join(ret)
-
-def make_rule(target, context, dct):
-    return (format_rule(target=target, context=context, **dct),
-            format_relation(target, context))
 
 def get_rel(cohort):
     for r in cohort.readings:
@@ -127,11 +127,16 @@ def gen_rules(contexts, dct, include_parent=False):
                     ctx = tuple([s[0] for s in seq])
                     count = min(s[1] for s in seq)
                     for tgc, tgi in contexts['t'].most_common(ct):
-                        yield make_rule(tgc, ctx, dct) + (min(count, tgi),)
+                        yield (dct['rtype'],
+                               format_rule(target=tgc, context=ctx, **dct),
+                               format_relation(tgc, ctx),
+                               min(count, tgi))
 
-cur.execute('SELECT COUNT(*) AS ct, rule, tags1, tags2, cohort_key FROM errors GROUP BY rule, tags1, tags2, cohort_key ORDER BY ct DESC LIMIT ?', (args.count,))
+patterns = []
+for rt in RTYPES:
+    cur.execute('SELECT COUNT(*) AS ct, rule, tags1, tags2, cohort_key FROM errors WHERE rule = ? GROUP BY rule, tags1, tags2, cohort_key ORDER BY ct DESC LIMIT ?', (rt, args.count))
+    patterns += cur.fetchall()
 
-patterns = cur.fetchall()
 for count, rule, tags1, tags2, ckey in patterns:
     cur.execute('SELECT window, cohort FROM errors WHERE rule = ? AND tags1 = ? AND tags2 = ? AND cohort_key = ?',
                 (rule, tags1, tags2, ckey))
@@ -143,7 +148,9 @@ for count, rule, tags1, tags2, ckey in patterns:
         dct,
         {'rtype': rule, 'tags': tags1, 'desttags': tags2},
         include_parent=(rule == 'rem-parent')))
-    cur.executemany('INSERT INTO context VALUES(?, ?, ?) ON CONFLICT(rule) DO UPDATE SET count = count + excluded.count', rules)
+    rules.sort(key=lambda x: x[3], reverse=True)
+    cur.executemany('INSERT INTO context VALUES(?, ?, ?, ?)',
+                    rules[:args.beam])
     con.commit()
 
 if PROFILE:
