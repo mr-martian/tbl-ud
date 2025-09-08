@@ -47,7 +47,13 @@ with open(args.target, 'rb') as fin:
     target = list(cg3.parse_binary_stream(fin))
 
 def format_rule(rtype, target, tags=None, desttags=None, context=None):
-    ctx = ' '.join(f'({test})' for test in sorted(context or []))
+    ls = []
+    if rtype == 'rem-parent':
+        ls = [c for c in context if c[0] == 'p'] + sorted(
+            [c for c in context if c[0] != 'p'])
+    else:
+        ls = sorted(context or [])
+    ctx = ' '.join(f'({test})' for test in ls)
     if rtype == 'remove':
         return f'REMOVE ({tags}) IF (0 ({target})) {ctx} ;'
     elif rtype == 'append':
@@ -55,7 +61,7 @@ def format_rule(rtype, target, tags=None, desttags=None, context=None):
     elif rtype == 'addcohort':
         return f'ADDCOHORT ("<ins>" {tags} @dep) BEFORE (*) IF (0 ({target})) {ctx} ;'
     elif rtype == 'rem-self':
-        return f'REMCOHORT (*) IF (0 ({target})) {ctx} ;'
+        return f'REMCOHORT (*) IF (0 ({target})) (NEGATE c (*)) {ctx} ;'
     elif rtype == 'rem-parent':
         return f'WITH (*) IF (0 ({target})) {ctx} {{\n\tSWITCHPARENT WITHCHILD (*) (*) ;\n\tREMCOHORT _C2_ ;\n}} ;'
 

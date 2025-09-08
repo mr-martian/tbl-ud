@@ -4,6 +4,7 @@ import utils
 
 parser = argparse.ArgumentParser()
 parser.add_argument('order', nargs='+')
+parser.add_argument('--count')
 args = parser.parse_args()
 
 def order(upos):
@@ -15,7 +16,7 @@ def order(upos):
         else:
             yield key
 
-for sent in utils.conllu_sentences(sys.stdin):
+for idx, sent in enumerate(utils.conllu_sentences(sys.stdin), 1):
     line = []
     for word in utils.conllu_words(sent):
         feats = utils.conllu_feature_dict(word[5], with_prefix=True)
@@ -32,3 +33,6 @@ for sent in utils.conllu_sentences(sys.stdin):
         w += f'<#{word[0]}→{word[6]}><@{word[7]}>$'
         line.append(w)
     print(' '.join(line))
+
+    if args.count and idx == args.count:
+        break

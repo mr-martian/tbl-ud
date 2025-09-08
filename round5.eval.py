@@ -59,12 +59,15 @@ def score_window(slw, tlw):
                         for r in c.readings)
     tgt_words = Counter((r.lemma, r.tags[0]) for c in tlw.cohorts
                         for r in c.readings)
-    #extra = src_words - tgt_words
+    extra = src_words - tgt_words
     missing = tgt_words - src_words
-    score += 20 * missing.total()
+    score += 10 * missing.total()
+    score += sum([(n-1)*(n-1) for k, n in extra.items() if k in tgt_words])
     #score += 5 * extra.total()
-    score += 5 * (src_words.total() - len(slw.cohorts))
+    score += 2 * (src_words.total() - len(slw.cohorts))
     score += len([s for s in slw.cohorts if s.static.lemma == '"<ins>"'])
+    score += sum([ct for (lm, tg), ct in src_words.items()
+                  if lm.startswith('"@')])
     # TODO: handle ambiguity on target side
     # TODO: feature mismatches
     return score
@@ -155,12 +158,14 @@ def generate():
         new_words = set()
         for i, (score, rule) in enumerate(rules):
             if intersections[i] & added:
+                print('CONFLICT', score, rule[1])
                 continue
             if rule[1][0] == 'A':
                 key = rule[1].split(')')[0]
                 if key in new_words:
                     continue
                 new_words.add(key)
+            print('SELECTED', score, rule[1])
             yield score, rule
             added.add(i)
 
