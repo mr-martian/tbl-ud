@@ -81,10 +81,12 @@ def score_row(row):
                 procs.append(subprocess.Popen(
                     ['python3', 'round7.py', src, args.target, out,
                      str(i), weight_str],
-                    check=True,
                     stdout=subprocess.PIPE, stderr=subprocess.PIPE))
             for p in procs:
                 p.wait()
+                if p.returncode:
+                    print(p.stderr.decode('utf-8'))
+                    raise ValueError('something went wrong')
         score1 = 0
         score_start = 0
         score_end = 0
