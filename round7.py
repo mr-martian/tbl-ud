@@ -204,7 +204,7 @@ def contextualize_rules(contexts, dct, include_parent=False):
 def run_grammar(gpath, opath):
     subprocess.run(['vislcg3', '--in-binary', '--out-binary', '-g',
                     gpath, '-I', args.source, '-O', opath],
-                   capture_output=True)
+                   capture_output=True, check=True)
     with open(opath, 'rb') as fout:
         yield from parse_cg3(fout, windows_only=True)
 

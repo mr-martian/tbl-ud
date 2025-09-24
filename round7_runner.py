@@ -81,6 +81,7 @@ def score_row(row):
                 procs.append(subprocess.Popen(
                     ['python3', 'round7.py', src, args.target, out,
                      str(i), weight_str],
+                    check=True,
                     stdout=subprocess.PIPE, stderr=subprocess.PIPE))
             for p in procs:
                 p.wait()
