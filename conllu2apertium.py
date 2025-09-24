@@ -4,14 +4,15 @@ import utils
 
 parser = argparse.ArgumentParser()
 parser.add_argument('order', nargs='+')
-parser.add_argument('--count')
+parser.add_argument('--count', type=int)
+parser.add_argument('--surface', action='store_true')
 args = parser.parse_args()
 
 def order(upos):
     for key in args.order:
         if ':' in key:
             a, b = key.split(':')
-            if a == key:
+            if a == upos:
                 yield b
         else:
             yield key
@@ -21,7 +22,10 @@ for idx, sent in enumerate(utils.conllu_sentences(sys.stdin), 1):
     for word in utils.conllu_words(sent):
         feats = utils.conllu_feature_dict(word[5], with_prefix=True)
         misc = utils.conllu_feature_dict(word[9], with_prefix=True)
-        w = '^'+word[2]+'<'+word[3]+'>'
+        w = '^'
+        if args.surface:
+            w += word[1]+'/'
+        w += word[2]+'<'+word[3]+'>'
         seq = list(order(word[3]))
         for key in seq:
             v = feats.get(key) or misc.get(key)
