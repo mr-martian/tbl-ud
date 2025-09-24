@@ -85,7 +85,7 @@ def score_row(row):
             for p in procs:
                 p.wait()
                 if p.returncode:
-                    print(p.stderr.decode('utf-8'))
+                    print(p.stderr.read().decode('utf-8'))
                     raise ValueError('something went wrong')
         score1 = 0
         score_start = 0
