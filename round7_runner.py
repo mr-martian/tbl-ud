@@ -115,7 +115,7 @@ def add_neighbors(row, cur):
                     (row[-1],))
 
 for idx in range(args.iterations):
-    cur.execute('SELECT *, rowid FROM weights WHERE state < 2 ORDER BY score1 ASC LIMIT ?', (args.workers,))
+    cur.execute('SELECT *, rowid FROM weights WHERE state < 2 ORDER BY score_scale ASC LIMIT ?', (args.workers,))
     rows = cur.fetchall()
     print(idx)
     print(rows)
