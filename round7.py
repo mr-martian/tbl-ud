@@ -11,7 +11,9 @@ import sqlite3
 import subprocess
 from tempfile import TemporaryDirectory
 
-RTYPES = ['remove', 'append', 'addcohort', 'rem-self', 'rem-parent']
+RTYPES = ['remove', 'append', 'addcohort', 'rem-self',
+          #'rem-parent'
+          ]
 
 parser = argparse.ArgumentParser()
 parser.add_argument('source')
@@ -42,8 +44,10 @@ with open(args.target, 'rb') as fin:
 
 def desc_r(reading):
     ret = reading.lemma
-    if reading.tags:
-        ret += ' ' + reading.tags[0]
+    for t in reading.tags:
+        if t != 'SOURCE':
+            ret += ' ' + t
+            break
     return ret
 def desc_c(cohort):
     for r in cohort.readings:
@@ -137,42 +141,44 @@ def describe_cohort(cohort):
         yield f'{rd.lemma} {tag} {rel}'
         # TODO: features
 
-def insert_description(dct, role, cohort):
-    first = None
-    seen = set()
-    for desc in describe_cohort(cohort):
-        if desc in seen:
-            continue
-        dct[role][desc] += 1
-        if first is None and 'SOURCE' not in desc:
-            first = desc
-        elif first:
-            dct['overlap'][first].add(desc)
-
-def collect_contexts(slw, idx, dct):
+def collect_neighbors(slw, idx, dct):
     ds = slw.cohorts[idx].dep_self
     dh = slw.cohorts[idx].dep_parent
-    s_rel = set()
-    c_rel = set()
     for cohort in slw.cohorts:
         if cohort.dep_self == dh:
-            insert_description(dct, 'p', cohort)
-        elif cohort.dep_parent == dh and cohort.dep_self != ds:
-            insert_description(dct, 's', cohort)
-            s_rel.add(get_rel(cohort))
+            dct['p'].add(cohort.dep_self)
+        elif cohort.dep_self == ds:
+            dct['t'].add(cohort.dep_self)
+        elif cohort.dep_parent == dh:
+            dct['s'].add(cohort.dep_self)
         elif cohort.dep_parent == ds:
-            insert_description(dct, 'c', cohort)
-            c_rel.add(get_rel(cohort))
-    insert_description(dct, 't', slw.cohorts[idx])
-    #dct['negs'].update(all_rels - s_rel)
-    #dct['negc'].update(all_rels - c_rel)
+            dct['c'].add(cohort.dep_self)
 
-def trim_contexts(dct):
-    for d1 in dct['overlap']:
-        for d2 in dct['overlap'][d1]:
-            for k in ['p', 't', 's', 'c']:
-                if dct[k][d1] == dct[k][d2]:
-                    dct[k][d2] = 0
+def select_contexts(cur, dct):
+    RANGE = 5
+    SIMILARITY = 0.9
+    ret = defaultdict(Counter)
+    for rel in dct:
+        cs = list(dct[rel])
+        qs = ', '.join(['?']*len(cs))
+        cur.execute(
+            f'SELECT cohort, pattern FROM tests WHERE cohort IN ({qs})',
+            cs)
+        d2 = defaultdict(set)
+        c2 = Counter()
+        for c, p in cur.fetchall():
+            d2[p].add(c)
+            c2[p] += 1
+        ls = c2.most_common()
+        for i in range(len(ls)):
+            pattern, count = ls[i]
+            for j in range(max(i-RANGE, 0), i):
+                pj = ls[j][0]
+                if len(d2[pattern].intersection(d2[pj])) / count >= SIMILARITY:
+                    break
+            else:
+                ret[rel][pattern] = count
+    return ret
 
 def rel_ranges(include_parent):
     mn = 1 if include_parent else 0
@@ -225,6 +231,8 @@ def calc_intersection(rules: list, gpath: str, opath: str):
                     targets[int(tag[2:])].add(cohort.dep_self)
     intersections = [set() for i in range(len(rules))]
     for i in range(len(rules)):
+        if not contexts[i]:
+            continue
         for j in range(i):
             if (targets[i] & targets[j]
                 or targets[i] & contexts[j]
@@ -250,7 +258,9 @@ def score_window(slw, tlw):
                                    if lm.startswith('"@')])
     return score
 
-base_score = sum(score_window(s, t) for s, t in zip(source, target))
+base_score = sum(score_window(s, t)
+                 for i, (s, t) in enumerate(zip(source, target))
+                 if i not in SKIP)
 
 def score_rule(rule, gpath, opath):
     with open(gpath, 'w') as fout:
@@ -281,6 +291,14 @@ with TemporaryDirectory() as tmpdir:
     cur.execute('CREATE TABLE context(rtype, rule TEXT, relation TEXT, count INT)')
     con.commit()
 
+    cur.execute('CREATE TABLE tests(cohort INTEGER, pattern TEXT)')
+    for window in source:
+        for cohort in window.cohorts:
+            cur.executemany(
+                'INSERT INTO tests(cohort, pattern) VALUES(?, ?)',
+                [(cohort.dep_self, dc) for dc in describe_cohort(cohort)])
+        con.commit()
+
     patterns = []
     for rt in RTYPES:
         cur.execute('SELECT COUNT(*) AS ct, rule, tags1, tags2, cohort_key FROM errors WHERE rule = ? GROUP BY rule, tags1, tags2, cohort_key ORDER BY ct DESC LIMIT ?', (rt, args.count))
@@ -289,12 +307,11 @@ with TemporaryDirectory() as tmpdir:
     for count, rule, tags1, tags2, ckey in patterns:
         cur.execute('SELECT window, cohort FROM errors WHERE rule = ? AND tags1 = ? AND tags2 = ? AND cohort_key = ?',
                     (rule, tags1, tags2, ckey))
-        dct = defaultdict(Counter)
-        dct['overlap'] = defaultdict(set)
+        neighbors = defaultdict(set)
         for wnum, cnum in cur.fetchall():
             slw = source[wnum]
-            collect_contexts(slw, cnum, dct)
-        trim_contexts(dct)
+            collect_neighbors(slw, cnum, neighbors)
+        dct = select_contexts(cur, neighbors)
         rules = list(contextualize_rules(
             dct,
             {'rtype': rule, 'tags': tags1, 'desttags': tags2},
