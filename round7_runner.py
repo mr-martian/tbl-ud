@@ -98,7 +98,7 @@ def score_row(row):
                 score1 += score_range(data, i, w1)
                 score_start += score_range(source, i, weights)
                 score_end += score_range(data, i, weights)
-        return (score1, score_start / score_end, row[-1])
+        return (score1, score_end / score_start, row[-1])
 
 def add_neighbors(row, cur):
     qs = ', '.join(['?']*len(cols))
