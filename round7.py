@@ -9,6 +9,7 @@ import json
 import os
 import sqlite3
 import subprocess
+import sys
 from tempfile import TemporaryDirectory
 
 RTYPES = ['remove', 'append', 'addcohort', 'rem-self',
@@ -363,3 +364,4 @@ with TemporaryDirectory() as tmpdir:
     subprocess.run(['vislcg3', '--in-binary', '--out-binary', '-g',
                     gpath, '-I', args.source, '-O', args.out],
                    capture_output=True)
+    print(len(selected_rules), file=sys.stderr)
