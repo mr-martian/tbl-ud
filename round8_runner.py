@@ -44,7 +44,7 @@ cur = con.cursor()
 if should_init:
     names = ', '.join(cols)
     vals = ', '.join([str(START[k]) for k in cols])
-    cur.execute(f'CREATE TABLE params({names}, score, state)')
+    cur.execute(f'CREATE TABLE params({names}, score, state, UNIQUE({names}) ON CONFLICT IGNORE)')
     cur.execute(f'INSERT INTO params VALUES({vals}, 0, 0)')
     con.commit()
 
