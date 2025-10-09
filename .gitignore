@@ -4,3 +4,9 @@ __pycache__
 steps
 *.json
 generated
+*.cg3
+*.stats
+callgrind*
+*.sqlite
+*.db
+*.tsv
