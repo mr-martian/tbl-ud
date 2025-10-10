@@ -87,7 +87,8 @@ def gen_rules(window, slw, tlw):
                         rules.append(('append', m, '')+suf)
         if len(words) > 1:
             for w in words:
-                rules.append(('remove', w, '')+suf)
+                if w in extra:
+                    rules.append(('remove', w, '')+suf)
         if inserting:
             for m in missing:
                 rules.append(('addcohort', m, '')+suf)
