@@ -210,14 +210,14 @@ def contextualize_rules(contexts, dct, ekey, include_parent=False):
                                min(count, tgi),
                                ekey)
 
-def run_grammar(gpath, opath):
+def run_grammar(ipath, gpath, opath):
     subprocess.run(['vislcg3', '--in-binary', '--out-binary', '-g',
-                    gpath, '-I', args.source, '-O', opath],
+                    gpath, '-I', ipath, '-O', opath],
                    capture_output=True, check=True)
     with open(opath, 'rb') as fout:
         yield from parse_cg3(fout, windows_only=True)
 
-def calc_intersection(rules: list, gpath: str, opath: str):
+def calc_intersection(rules: list, ipath, gpath: str, opath: str):
     if not rules:
         return []
     with open(gpath, 'w') as fout:
@@ -225,7 +225,7 @@ def calc_intersection(rules: list, gpath: str, opath: str):
             fout.write(r[2].replace('{NUM}', str(i)) + '\n')
     targets = defaultdict(set)
     contexts = defaultdict(set)
-    for window in run_grammar(gpath, opath):
+    for window in run_grammar(ipath, gpath, opath):
         for cohort in window.cohorts:
             for tag, heads in cohort.relations.items():
                 if tag[0] == 'r' and tag[1:].isdigit():
@@ -261,11 +261,11 @@ def score_window(slw, tlw):
                                    if lm.startswith('"@')])
     return score
 
-def score_rule(rule, gpath, opath):
+def score_rule(rule, ipath, gpath, opath):
     with open(gpath, 'w') as fout:
         fout.write(RULE_HEADER + rule[1])
     score = 0
-    for slw, tlw in zip(run_grammar(gpath, opath), target):
+    for slw, tlw in zip(run_grammar(ipath, gpath, opath), target):
         score += score_window(slw, tlw)
     return score
 
@@ -339,7 +339,7 @@ with (TemporaryDirectory() as tmpdir,
                 i = len(rules)
                 gpath = os.path.join(tmpdir, f'g{i:05}.cg3')
                 opath = os.path.join(tmpdir, f'o{i:05}.bin')
-                s = score_rule(rule, gpath, opath)
+                s = score_rule(rule, src_path, gpath, opath)
                 print(s, rule[1])
                 if s < base_score:
                     rules.append((s, rule))
@@ -349,7 +349,7 @@ with (TemporaryDirectory() as tmpdir,
         rules.sort()
         gpath = os.path.join(tmpdir, f'intersection.{iteration}.cg3')
         opath = os.path.join(tmpdir, f'intersection.{iteration}.bin')
-        intersections = calc_intersection(rules, gpath, opath)
+        intersections = calc_intersection(rules, src_path, gpath, opath)
         added = set()
         new_words = set()
         selected_rules = []
