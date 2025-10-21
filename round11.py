@@ -40,9 +40,6 @@ args = parser.parse_args()
 WEIGHTS = defaultdict(lambda: 1, json.loads(args.weights))
 EXCLUDE = set()
 
-with open(args.target, 'rb') as fin:
-    target = list(parse_cg3(fin, windows_only=True))
-
 def desc_r(reading):
     ret = reading.lemma
     for t in reading.tags:
@@ -77,11 +74,15 @@ def collect_words_and_feats(window):
             tags_to_feature_dict(r.tags, feats[d])
     return words, feats
 
+with open(args.target, 'rb') as fin:
+    target = list(parse_cg3(fin, windows_only=True))
+target_words_and_feats = [collect_words_and_feats(w) for w in target]
+
 def gen_rules(window, slw, tlw):
     LEAF_POS = ['CCONJ', 'ADP', 'DET', 'PUNCT', 'INTJ', 'PART', 'AUX']
     rules = []
     src_words, src_feats = collect_words_and_feats(slw)
-    tgt_words, tgt_feats = collect_words_and_feats(tlw)
+    tgt_words, tgt_feats = target_words_and_feats[window]
     extra = +(src_words - tgt_words)
     missing = +(tgt_words - src_words)
     for idx, cohort in enumerate(slw.cohorts):
@@ -291,11 +292,11 @@ def calc_intersection(rules: list, ipath, gpath: str, opath: str):
                 intersections[j].add(i)
     return intersections
 
-def score_window(slw, tlw):
+def score_window(slw, tlw, index):
     score = 0
     score += WEIGHTS['cohorts'] * abs(len(slw.cohorts) - len(tlw.cohorts))
     src_words, src_feats = collect_words_and_feats(slw)
-    tgt_words, tgt_feats = collect_words_and_feats(tlw)
+    tgt_words, tgt_feats = target_words_and_feats[index]
     extra = src_words - tgt_words
     missing = tgt_words - src_words
     score += WEIGHTS['missing'] * missing.total()
@@ -318,8 +319,8 @@ def score_rule(rule, ipath, gpath, opath):
     with open(gpath, 'w') as fout:
         fout.write(RULE_HEADER + rule[1])
     score = 0
-    for slw, tlw in zip(run_grammar(ipath, gpath, opath), target):
-        score += score_window(slw, tlw)
+    for i, (slw, tlw) in enumerate(zip(run_grammar(ipath, gpath, opath), target)):
+        score += score_window(slw, tlw, i)
     return score
 
 with (TemporaryDirectory() as tmpdir,
@@ -338,7 +339,7 @@ with (TemporaryDirectory() as tmpdir,
             src_path = args.source
         with open(src_path, 'rb') as fin:
             source = list(parse_cg3(fin, windows_only=True))
-        base_score = sum(score_window(s, t) for s, t in zip(source, target))
+        base_score = sum(score_window(s, t, i) for i, (s, t) in enumerate(zip(source, target)))
         tgt_path = os.path.join(tmpdir, f'output.{iteration+1}.bin')
 
         for table in ['errors', 'context', 'tests']:
