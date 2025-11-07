@@ -155,6 +155,11 @@ class WindowLinearizer:
             else:
                 yield from self.extract(i)
 
+    def get_weight_difference(self, head, left, right):
+        l = self.layers[head].index(left)
+        r = self.layers[head].index(right)
+        return self.weights[head][l][r] - self.weights[head][r][l]
+
 def linearize_file(fname):
     with open(fname, 'rb') as fin:
         for window in parse_binary_stream(fin, windows_only=True):
