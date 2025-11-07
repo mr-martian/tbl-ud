@@ -2,10 +2,8 @@ from cg3 import parse_binary_stream
 from collections import defaultdict
 from dataclasses import dataclass, field
 import itertools
-import sqlite3
 
 ALL_RULES = []
-TAGS_TO_RULES = defaultdict(set)
 
 @dataclass
 class Rule:
@@ -18,18 +16,23 @@ class Rule:
     # S = siblings in listed order
     # MR = shift right one space
 
+    def to_string(self):
+        l = '|'.join(sorted(self.ltags)) or '_'
+        r = '|'.join(sorted(self.rtags)) or '_'
+        return f'{self.mode}\t{l}\t{r}\t{self.weight}'
+
 def parse_rule(linenumber, line):
-    global ALL_RULES, TAGS_TO_RULES
+    global ALL_RULES
     ls = line.strip().split('\t')
     if len(ls) != 4:
         raise ValueError(f'{linenumber} does not have 4 columns')
     r = Rule()
     r.mode = ls[0]
-    r.ltags = set(ls[1].split('|'))
-    r.rtags = set(ls[2].split('|'))
+    if ls[1] != '_':
+        r.ltags = set(ls[1].split('|'))
+    if ls[2] != '_':
+        r.rtags = set(ls[2].split('|'))
     r.weight = float(ls[3])
-    for t in r.ltags | r.rtags:
-        TAGS_TO_RULES[t].add(len(ALL_RULES))
     ALL_RULES.append(r)
 
 def parse_rule_file(fname):
@@ -39,7 +42,7 @@ def parse_rule_file(fname):
                 parse_rule(i, line)
 
 class WindowLinearizer:
-    def __init__(self, window):
+    def __init__(self, window, extra_rules=None):
         self.layers = defaultdict(list)
         self.lrules = defaultdict(set)
         self.rrules = defaultdict(set)
@@ -47,6 +50,8 @@ class WindowLinearizer:
         self.linearized = {}
         self.shifts = []
         self.relations = defaultdict(set)
+        self.weights = {}
+        self.extra_rules = extra_rules or []
         for cohort in window.cohorts:
             self.process_cohort(cohort)
         for head in self.layers:
@@ -55,7 +60,8 @@ class WindowLinearizer:
         for sh in self.shifts:
             for i, w in enumerate(self.sequence):
                 if w[0] == sh and i + 1 < len(self.sequence):
-                    self.sequence[i], self.sequence[i+1] = self.sequence[i+1], self.sequence[i]
+                    self.sequence[i], self.sequence[i+1] = \
+                        self.sequence[i+1], self.sequence[i]
                     break
 
     def process_cohort(self, cohort):
@@ -64,14 +70,15 @@ class WindowLinearizer:
         for reading in cohort.readings:
             if 'SOURCE' in reading.tags:
                 continue
-            self.readings[cohort.dep_self] = [reading.lemma] + reading.tags
+            self.readings[cohort.dep_self] = [reading.lemma] + \
+                [t for t in reading.tags if t != '<<<']
             for t in reading.tags:
                 if t[0] == '@':
                     self.relations[t].add(cohort.dep_self)
                     break
             break
         pat = set(self.readings[cohort.dep_self])
-        for i, r in enumerate(ALL_RULES):
+        for i, r in enumerate(ALL_RULES + self.extra_rules):
             if r.ltags <= pat:
                 if r.mode == 'MR':
                     self.shifts.append(cohort.dep_self)
@@ -81,10 +88,14 @@ class WindowLinearizer:
                 self.rrules[cohort.dep_self].add(i)
 
     def process_layer(self, head):
-        layer = self.layers[head]
+        layer = self.layers[head][:]
         if len(layer) == 1:
             self.linearized[head] = layer
             return
+        #conj = [c for c in layer if c != head and c in self.relations['@conj']]
+        #if len(conj) > 1:
+        #    for c in conj[1:]:
+        #        layer.pop(layer.index(c))
         weights = [[0 for i in layer] for j in layer]
         for i, wi in enumerate(layer):
             for j, wj in enumerate(layer):
@@ -94,7 +105,7 @@ class WindowLinearizer:
                     continue
                 rules = self.lrules[wi] & self.rrules[wj]
                 for ri in rules:
-                    rl = ALL_RULES[ri]
+                    rl = (ALL_RULES + self.extra_rules)[ri]
                     if wi == head:
                         if rl.mode == 'L':
                             weights[j][i] += rl.weight
@@ -102,17 +113,40 @@ class WindowLinearizer:
                             weights[i][j] += rl.weight
                     elif rl.mode == 'S':
                         weights[i][j] += rl.weight
-        best_row = layer
-        best_score = 0
-        for row in itertools.permutations(list(range(len(layer)))):
-            score = 0
-            for idx, i in enumerate(row):
-                for j in row[idx+1:]:
-                    score += weights[i][j]
-            if score > best_score:
-                best_row = [layer[i] for i in row]
-                best_score = score
-        self.linearized[head] = best_row
+        #best_row = list(range(len(layer)))
+        #best_score = 0
+        #for row in itertools.permutations(list(range(len(layer)))):
+        #    score = 0
+        #    for idx, i in enumerate(row):
+        #        for j in row[idx+1:]:
+        #            score += weights[i][j]
+        #    if score > best_score:
+        #        best_row = row
+        #        best_score = score
+
+        best_row = [layer.index(head)]
+        for n in range(len(layer)):
+            if n in best_row:
+                continue
+            options = []
+            for i in range(len(best_row)+1):
+                score = sum(weights[j][n] for j in best_row[:i])
+                score += sum(weights[n][j] for j in best_row[i:])
+                count = len([x for x in best_row[:i] if x < n])
+                count += len([x for x in best_row[i:] if x > n])
+                options.append((score, count, i))
+            options.sort()
+            best_row.insert(options[-1][-1], n)
+
+        #lin = []
+        #for n in best_row:
+        #    if conj and layer[n] == conj[0]:
+        #        lin += conj
+        #    else:
+        #        lin.append(layer[n])
+        #self.linearized[head] = lin
+        self.linearized[head] = [layer[n] for n in best_row]
+        self.weights[head] = weights
 
     def extract(self, head):
         for i in self.linearized[head]:
@@ -125,7 +159,7 @@ def linearize_file(fname):
     with open(fname, 'rb') as fin:
         for window in parse_binary_stream(fin, windows_only=True):
             seq = WindowLinearizer(window).sequence
-            print('\n'.join(' '.join(w[1]) for w in seq))
+            print('\n'.join(str(w[0]) + ' '.join(w[1]) for w in seq))
             # TODO: how best to output?
             break # @TEST TODO
 
