@@ -1,0 +1,42 @@
+<html>
+  <head>
+    <title>Rank Rules</title>
+  </head>
+  <body>
+    <form id="form">
+      {% for key in keys %}
+      <div>
+	<label for="{{key}}">{{key}}</label>
+	<input type="number" id="{{key}}" name="{{key}}"
+	       value="{{weights[key]}}"
+	       onchange="document.getElementById('form').submit()"
+	       ></input>
+      </div>
+      {% endfor %}
+    </form>
+    <table>
+      <thead>
+	<tr>
+	  <th>Rule</th>
+	  <th>Count</th>
+	  <th>Score</th>
+	  {% for key in keys %}
+	  <th>{{key}}</th>
+	  {% endfor %}
+	</tr>
+      </thead>
+      <tbody>
+	{% for row in scored %}
+	<tr>
+	  <td>{{row[2]}}</td>
+	  <td>{{row[3]}}</td>
+	  <td>{{row[0]}}</td>
+	  {% for key in keys %}
+	  <td>{{row[4][key]}}</td>
+	  {% endfor %}
+	</tr>
+	{% endfor %}
+      </tbody>
+    </table>
+  </body>
+</html>
