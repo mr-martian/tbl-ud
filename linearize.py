@@ -1,5 +1,5 @@
 from cg3 import parse_binary_stream
-from collections import defaultdict
+from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 import itertools
 
