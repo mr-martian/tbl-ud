@@ -196,7 +196,7 @@ def generate_rule(corpus, count=100):
             rule_freq[rs] += 1
             if rs not in rules:
                 rules[rs] = rule
-    print(sum(s.base_score for s in corpus))
+    print('starting score', sum(s.base_score for s in corpus))
     results = []
     for rs, _ in rule_freq.most_common(count):
         rule = rules[rs]

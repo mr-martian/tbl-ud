@@ -35,6 +35,19 @@ def parse_apertium(line):
         words.append(w)
     return words
 
+def parse_conllu(block):
+    ret = []
+    for line in block.splitlines():
+        cols = line.strip().split('\t')
+        if len(cols) != 10 or not cols[0].isdigit():
+            continue
+        feats = set() if cols[5] == '_' else set(cols[5].split('|'))
+        ret.append(APWord(lemma='"'+cols[2]+'"',
+                          pos=cols[2],
+                          tags=feats | {'@'+cols[7]}))
+    return ret
+
+
 @dataclass
 class Sentence:
     source: Window = None
@@ -125,8 +138,10 @@ def load_corpus(src, tgt):
     with open(src, 'rb') as fin:
         source = list(parse_binary_stream(fin, windows_only=True))
 
+    #with open(tgt) as fin:
+    #    target = [parse_apertium(block) for block in fin.read().split('\n\n')]
     with open(tgt) as fin:
-        target = [parse_apertium(block) for block in fin.read().split('\n\n')]
+        target = [parse_conllu(block) for block in fin.read().split('\n\n')]
 
     return [Sentence.from_input(s, t) for s, t in zip(source, target)]
 
@@ -139,7 +154,7 @@ def generate_rule(corpus, count=100):
             rule_freq[rs] += 1
             if rs not in rules:
                 rules[rs] = rule
-    print(sum(s.base_score for s in corpus))
+    print('starting score', sum(s.base_score for s in corpus))
     results = []
     for rs, _ in rule_freq.most_common(count):
         rule = rules[rs]

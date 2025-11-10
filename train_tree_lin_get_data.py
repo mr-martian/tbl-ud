@@ -4,6 +4,10 @@ import argparse
 import random
 import sys
 
+parser = argparse.ArgumentParser()
+parser.add_argument('--max', type=int, default=-1)
+args = parser.parse_args()
+
 def process_sent(words):
     plain = []
     merge = defaultdict(list)
@@ -28,12 +32,16 @@ def process_sent(words):
         print(f'"<blah>"\n\t"{w.lemma}" {w.upos} {tg} @{w.relation} #{update[w.index]}->{update[w.head]}')
     print()
 
+n = 0
 cur = ''
 for line in sys.stdin:
     if not line.strip():
         if cur:
             process_sent(parse_conllu(cur))
+            n += 1
         cur = ''
+        if n == args.max:
+            break
     else:
         cur += line.strip() + '\n'
 if cur:
