@@ -10,14 +10,9 @@ import subprocess
 import sys
 from tempfile import TemporaryDirectory
 
-RTYPES = ['remove', 'append', 'addcohort', 'rem-self', 'substitute',
-          #'rem-parent'
-          ]
+RTYPES = ['grandparent', 'sibling', 'child', 'relation']
 RULE_HEADER = '''
-OPTIONS += addcohort-attach ;
 DELIMITERS = "<$$$>" ;
-PROTECT (SOURCE) ;
-
 
 '''
 LEAF_POS = ['CCONJ', 'ADP', 'DET', 'PUNCT', 'INTJ', 'PART', 'AUX']
@@ -27,7 +22,6 @@ parser.add_argument('source')
 parser.add_argument('target')
 parser.add_argument('iterations', type=int)
 parser.add_argument('out')
-parser.add_argument('--weights', action='store', default='{}')
 parser.add_argument('--count', type=int, default=25,
                     help='number of templates to expand')
 parser.add_argument('--ctx', type=int, default=2,
@@ -40,7 +34,6 @@ parser.add_argument('--context_similarity', type=float, default=0.9,
                     help='threshold for discarding more complex context as equivalent')
 args = parser.parse_args()
 
-WEIGHTS = defaultdict(lambda: 1, json.loads(args.weights))
 EXCLUDE = set()
 
 def desc_r(reading):
@@ -53,132 +46,93 @@ def desc_r(reading):
 def desc_c(cohort):
     for r in cohort.readings:
         if 'SOURCE' in r.tags:
-            return desc_r(r)
+            continue
+        return desc_r(r)
     return desc_r(cohort.readings[0])
-
 def get_rel(cohort):
     for r in cohort.readings:
         for t in r.tags:
             if t[0] == '@':
                 return t
 
-def tags_to_feature_dict(tags, dct=None):
-    if dct is None:
-        dct = defaultdict(Counter)
-    for t in tags:
-        if '=' in t:
-            k, v = t.split('=', 1)
-            dct[k][v] += 1
-    return dct
+def get_heads(window):
+    heads = {}
+    index = {0: -1}
+    rels = []
+    for i, c in enumerate(window.cohorts):
+        heads[c.dep_self] = c.dep_parent
+        index[c.dep_self] = i
+        rels.append(get_rel(c))
+    return (heads, index, rels)
 
-def collect_words_and_feats(window):
-    words = Counter()
-    feats = defaultdict(lambda: defaultdict(Counter))
-    for c in window.cohorts:
-        for r in c.readings:
-            if 'SOURCE' in r.tags:
-                continue
-            d = desc_r(r)
-            words[d] += 1
-            tags_to_feature_dict(r.tags, feats[d])
-    return words, feats
+def get_path(wid, heads, index):
+    if wid == 0:
+        return [-1]
+    else:
+        return [index[wid]] + get_path(heads[wid], heads, index)
 
 with open(args.target, 'rb') as fin:
     target = list(parse_cg3(fin, windows_only=True))
-target_words_and_feats = [collect_words_and_feats(w) for w in target]
+target_heads = [get_heads(w) for w in target]
 
 def gen_rules(window, slw, tlw):
     rules = []
-    src_words, src_feats = collect_words_and_feats(slw)
-    tgt_words, tgt_feats = target_words_and_feats[window]
-    extra = +(src_words - tgt_words)
-    missing = +(tgt_words - src_words)
-    for idx, cohort in enumerate(slw.cohorts):
-        suf = (window, idx, desc_c(cohort))
-        rel = get_rel(cohort)
-        inserting = not any(l in suf[2] for l in LEAF_POS)
-        words = [desc_r(r) for r in cohort.readings if 'SOURCE' not in r.tags]
-        if all(w in extra for w in words):
-            children = [(i, desc_c(c)) for i, c in enumerate(slw.cohorts)
-                        if c.dep_parent == cohort.dep_self]
-            if children:
-                for ch in children:
-                    rules.append(('rem-parent', '', '', window)+ch)
+    src_heads, src_index, src_rels = get_heads(slw)
+    tgt_heads, tgt_index, tgt_rels = target_heads[window]
+    descs = [None] * len(slw.cohorts)
+    for i, (sc, tc) in enumerate(zip(slw.cohorts, tlw.cohorts)):
+        sid = sc.dep_self
+        tid = tc.dep_self
+        sh = sc.dep_parent
+        th = tc.dep_parent
+        srel = src_rels[i]
+        trel = tgt_rels[i]
+        if descs[i] is None:
+            descs[i] = desc_c(sc)
+        suf = (window, i, descs[i])
+        if srel != trel:
+            rules.append(('relation', srel, trel, None, '')+suf)
+        if src_index[sh] != tgt_index[th]:
+            if th == 0:
+                ch = 0
             else:
-                rules.append(('rem-self', '', '')+suf)
-            if inserting:
-                for m in missing:
-                    if 'PUNCT' in m:
-                        if not (cohort.static.lemma == '<ins>' in suf[2] or 'PUNCT' in suf[2]):
-                            continue
-                    rules.append(('append', m+' '+rel, '')+suf)
+                ch = slw.cohorts[tgt_index[th]].dep_self
+            sp = get_path(sid, src_heads, src_index)
+            cp = get_path(ch, src_heads, src_index)
+            if sp[0] in cp:
+                n = cp[cp.index(sp[0]) - 1]
+                if descs[n] is None:
+                    descs[n] = desc_c(slw.cohorts[n])
+                rules.append(('child', '', '', n, descs[n])+suf)
+            elif sp[1] in cp:
+                n = cp[cp.index(sp[1]) - 1]
+                if descs[n] is None:
+                    descs[n] = desc_c(slw.cohorts[n])
+                rules.append(('sibing', '', '', n, descs[n])+suf)
             else:
-                for m in missing:
-                    if any(l in m and l in suf[2] for l in LEAF_POS):
-                        rules.append(('append', m+' '+rel, '')+suf)
-        if len(words) > 1:
-            for w in words:
-                if w in extra:
-                    rules.append(('remove', w, '')+suf)
-        if inserting:
-            for m in missing:
-                rules.append(('addcohort', m, '')+suf)
-        for r in cohort.readings:
-            if 'SOURCE' in r.tags:
-                continue
-            d = desc_r(r)
-            sc = src_words[d]
-            tc = tgt_words[d]
-            if tc == 0:
-                continue
-            rf = dict([t.split('=', 1) for t in r.tags if '=' in t])
-            sf = src_feats[d]
-            tf = tgt_feats[d]
-            for k, v in rf.items():
-                if sf[k][v] <= tf[k][v]:
-                    continue
-                st = sf[k].total()
-                tt = tf[k].total()
-                if st > tt:
-                    rules.append(('substitute', f'{k}={v}', '*')+suf)
-                for v2 in tf[k]:
-                    if v != v2 and sf[k][v2] < tf[k][v2]:
-                        rules.append(('substitute', f'{k}={v}', f'{k}={v2}')+suf)
-            for k in tf:
-                if k in rf:
-                    continue
-                diff = +(tf[k] - sf[k])
-                for v in diff:
-                    rules.append(('substitute', '*', f'{k}={v}')+suf)
+                rules.append(('grandparent', '', '', None, '')+suf)
     def error_key(row):
-        return '-'.join(row[k] for k in [0, 1, 2, 5])
+        return '-'.join(str(row[k]) for k in [0, 1, 2, 4, 7])
     return [r for r in rules if error_key(r) not in EXCLUDE]
 
-def format_rule(rtype, target, tags=None, desttags=None, context=None):
-    ls = []
-    if rtype == 'rem-parent':
-        ls = [c for c in context if c[0] == 'p'] + sorted(
-            [c for c in context if c[0] != 'p'])
-    else:
-        ls = sorted(context or [])
-    ctx = ' '.join(f'({test})' for test in ls)
-    if rtype == 'remove':
-        return f'REMOVE ({tags}) IF (0 {target}) {ctx} ;'
-    elif rtype == 'append':
-        return f'APPEND ({tags}) (*) IF (0 {target}) {ctx} ;'
-    elif rtype == 'addcohort':
-        return f'ADDCOHORT ("<ins>" {tags} @dep) BEFORE (*) IF (0 {target}) (NEGATE c ({tags})) {ctx} ;'
-    elif rtype == 'rem-self':
-        return f'REMCOHORT (*) IF (0 {target}) (NEGATE c (*)) {ctx} ;'
-    elif rtype == 'rem-parent':
-        return f'WITH (*) IF (0 {target}) {ctx} {{\n\tSWITCHPARENT WITHCHILD (*) (*) ;\n\tREMCOHORT _C2_ ;\n}} ;'
-
-    elif rtype == 'substitute':
+def format_rule(rtype, target, tags=None, desttags=None, ctarget=None,
+                context=None):
+    ctx = ' '.join(f'({test})' for test in sorted(context))
+    if rtype == 'relation':
         return f'SUBSTITUTE ({tags}) ({desttags}) (*) IF (0 {target}) {ctx} ;'
+    elif rtype == 'child':
+        return f'SWITCHPARENT WITHCHILD (*) (*) IF (0 {ctarget}) (p {target}) {ctx} ;'
+    elif rtype == 'sibling':
+        return f'SETPARENT (*) (0 {target}) {ctx} TO (s {ctarget}) ;'
+    elif rtype == 'grandparent':
+        return f'SETPARENT (*) (0 {target}) {ctx} TO (p (*) LINK p (*)) ;'
 
-def format_relation(target, context):
+def format_relation(rtype, target, ctarget, context):
     ret = []
     ret.append(f'ADDRELATION (tr{{NUM}}) (*) (0 {target}) TO (0 (*)) ;')
+    if ctarget:
+        sel = 's' if rtype == 'sibling' else 'c'
+        ret.append(f'ADDRELATION (ct{{NUM}}) (*) (0 {target}) TO ({sel} {ctarget})')
     for test in context:
         ret.append(f'ADDRELATION (r{{NUM}}) (*) (0 {target}) TO (A{test}) ;')
     # TODO: NEGATE
@@ -263,33 +217,37 @@ def select_contexts(cur, dct):
                 ret[rel][pattern] = count
     return ret
 
-def rel_ranges(include_parent):
-    mn = 1 if include_parent else 0
+def rel_ranges():
     for n in range(1, args.ctx+1):
-        for i_p in range(mn, 2):
+        for i_p in range(2):
             for i_s in range(n-i_p+1):
                 yield i_p, i_s, (n-i_p-i_s)
 
-def contextualize_rules(contexts, dct, ekey, include_parent=False):
+def contextualize_rules(contexts, dct, ekey):
     ct = args.count >> 2
     cp = [(f'p {k}',v) for k,v in contexts['p'].most_common(ct)]
     cs = [(f's {k}',v) for k,v in contexts['s'].most_common(ct)]
     cs += [(f'NEGATE s {k}',v) for k,v in contexts['negs'].most_common(ct)]
     cc = [(f'c {k}',v) for k,v in contexts['c'].most_common(ct)]
     cc += [(f'NEGATE c {k}',v) for k,v in contexts['negc'].most_common(ct)]
-    for i_p, i_s, i_c in rel_ranges(include_parent):
+    targets = contexts['t'].most_common(ct)
+    ctargets = contexts['ct'].most_common(ct) or [(None, targets[0][1])]
+    for i_p, i_s, i_c in rel_ranges():
         for t_p in combinations(cp, i_p):
             for t_s in combinations(cs, i_s):
                 for t_c in combinations(cc, i_c):
                     seq = t_p + t_s + t_c
                     ctx = tuple([s[0] for s in seq])
                     count = min(s[1] for s in seq)
-                    for tgc, tgi in contexts['t'].most_common(ct):
-                        yield (dct['rtype'],
-                               format_rule(target=tgc, context=ctx, **dct),
-                               format_relation(tgc, ctx),
-                               min(count, tgi),
-                               ekey)
+                    for tgc, tgi in targets:
+                        for ctgc, ctgi in ctargets:
+                            yield (dct['rtype'],
+                                   format_rule(target=tgc, ctarget=ctgi,
+                                               context=ctx, **dct),
+                                   format_relation(dct['rtype'], tgc, ctgc,
+                                                   ctx),
+                                   min(count, tgi, ctgi),
+                                   ekey)
 
 def run_grammar(ipath, gpath, opath):
     subprocess.run(['vislcg3', '--in-binary', '--out-binary', '-g',
@@ -313,6 +271,8 @@ def calc_intersection(rules: list, ipath, gpath: str, opath: str):
                     contexts[int(tag[1:])].update(heads)
                 elif tag.startswith('tr') and tag[2:].isdigit():
                     targets[int(tag[2:])].add(cohort.dep_self)
+                elif tag.startswith('ct') and tag[2:].isdigit():
+                    targets[int(tag[2:])].update(heads)
     intersections = [set() for i in range(len(rules))]
     for i in range(len(rules)):
         if not contexts[i]:
@@ -327,25 +287,18 @@ def calc_intersection(rules: list, ipath, gpath: str, opath: str):
 
 def score_window(slw, tlw, index):
     score = 0
-    score += WEIGHTS['cohorts'] * abs(len(slw.cohorts) - len(tlw.cohorts))
-    src_words, src_feats = collect_words_and_feats(slw)
-    tgt_words, tgt_feats = target_words_and_feats[index]
-    extra = src_words - tgt_words
-    missing = tgt_words - src_words
-    score += WEIGHTS['missing'] * missing.total()
-    score += WEIGHTS['extra'] * extra.total()
-    score += WEIGHTS['ambig'] * (src_words.total() - len(slw.cohorts))
-    score += WEIGHTS['ins'] * len([s for s in slw.cohorts if any(r.lemma == '"<ins>"' for r in s.readings)])
-    score += WEIGHTS['unk'] * sum([ct for lm, ct in src_words.items()
-                                   if lm.startswith('"@')])
-    mf = 0
-    ef = 0
-    for k1 in set(src_feats.keys()) | set(tgt_feats.keys()):
-        for k2 in set(src_feats[k1].keys()) | set(tgt_feats[k1].keys()):
-            ef += (src_feats[k1][k2] - tgt_feats[k1][k2]).total()
-            mf += (tgt_feats[k1][k2] - src_feats[k1][k2]).total()
-    score += WEIGHTS['missing_feats'] * mf
-    score += WEIGHTS['extra_feats'] * ef
+    src_heads, src_index, src_rels = get_heads(slw)
+    tgt_heads, tgt_index, tgt_rels = target_heads[index]
+    for i, (sc, tc) in enumerate(zip(slw.cohorts, tlw.cohorts)):
+        if src_rels[i] != tgt_rels[i]:
+            score += 1
+        if src_index[sc.dep_parent] != tgt_index[tc.dep_parent]:
+            sp = get_path(sc.dep_self, src_heads, src_index)
+            tp = get_path(tc.dep_self, tgt_heads, tgt_index)
+            while sp and tp and sp[-1] == tp[-1]:
+                sp.pop()
+                tp.pop()
+            score += len(sp) + len(tp) - 2
     return score
 
 def score_rule(rule, ipath, gpath, opath):
@@ -361,7 +314,7 @@ with (TemporaryDirectory() as tmpdir,
     db_path = os.path.join(tmpdir, 'db.sqlite')
     con = sqlite3.connect(db_path)
     cur = con.cursor()
-    cur.execute('CREATE TABLE errors(rule, tags1, tags2, window, cohort, cohort_key)')
+    cur.execute('CREATE TABLE errors(rule, tags1, tags2, ctarget, ctarget_key, window, cohort, cohort_key)')
     cur.execute('CREATE TABLE context(rtype, rule TEXT, relation TEXT, count INT, error_label TEXT)')
     cur.execute('CREATE TABLE tests(cohort INTEGER, pattern TEXT)')
     con.commit()
@@ -380,8 +333,9 @@ with (TemporaryDirectory() as tmpdir,
         con.commit()
 
         for window, (slw, tlw) in enumerate(zip(source, target)):
-            cur.executemany('INSERT INTO errors VALUES(?, ?, ?, ?, ?, ?)',
-                            gen_rules(window, slw, tlw))
+            cur.executemany(
+                'INSERT INTO errors VALUES(?, ?, ?, ?, ?, ?, ?, ?)',
+                gen_rules(window, slw, tlw))
             for ch in slw.cohorts:
                 cur.executemany(
                     'INSERT INTO tests(cohort, pattern) VALUES(?, ?)',
@@ -390,23 +344,24 @@ with (TemporaryDirectory() as tmpdir,
 
         patterns = []
         for rt in RTYPES:
-            cur.execute('SELECT COUNT(*) AS ct, rule, tags1, tags2, cohort_key FROM errors WHERE rule = ? GROUP BY rule, tags1, tags2, cohort_key ORDER BY ct DESC LIMIT ?', (rt, args.count))
+            cur.execute('SELECT COUNT(*) AS ct, rule, tags1, tags2, cohort_key, ctarget_key FROM errors WHERE rule = ? GROUP BY rule, tags1, tags2, cohort_key, ctarget_key ORDER BY ct DESC LIMIT ?', (rt, args.count))
             patterns += cur.fetchall()
 
-        for count, rule, tags1, tags2, ckey in patterns:
-            label = f'{rule}-{tags1}-{tags2}-{ckey}'
-            cur.execute('SELECT window, cohort FROM errors WHERE rule = ? AND tags1 = ? AND tags2 = ? AND cohort_key = ?',
-                        (rule, tags1, tags2, ckey))
+        for count, rule, tags1, tags2, ckey, ctkey in patterns:
+            label = f'{rule}-{tags1}-{tags2}-{ctkey}-{ckey}'
+            cur.execute('SELECT window, cohort, ctarget FROM errors WHERE rule = ? AND tags1 = ? AND tags2 = ? AND cohort_key = ? AND ctarget_key = ?',
+                        (rule, tags1, tags2, ckey, ctkey))
             neighbors = defaultdict(set)
-            for wnum, cnum in cur.fetchall():
+            for wnum, cnum, ctnum in cur.fetchall():
                 slw = source[wnum]
+                if ctnum is not None:
+                    neighbors['ct'].add(slw.cohorts[ctnum].dep_self)
                 collect_neighbors(slw, cnum, neighbors)
             dct = select_contexts(cur, neighbors)
             rules = list(contextualize_rules(
                 dct,
                 {'rtype': rule, 'tags': tags1, 'desttags': tags2},
-                label,
-                include_parent=(rule == 'rem-parent')))
+                label))
             rules.sort(key=lambda x: x[3], reverse=True)
             cur.executemany('INSERT INTO context VALUES(?, ?, ?, ?, ?)',
                             rules[:args.beam])
@@ -438,16 +393,10 @@ with (TemporaryDirectory() as tmpdir,
         opath = os.path.join(tmpdir, f'intersection.{iteration}.bin')
         intersections = calc_intersection(rules, src_path, gpath, opath)
         added = set()
-        new_words = set()
         selected_rules = []
         for i, (score, rule) in enumerate(rules):
             if intersections[i] & added:
                 continue
-            if rule[1][0] == 'A':
-                key = rule[1].split(')')[0]
-                if key in new_words:
-                    continue
-                new_words.add(key)
             selected_rules.append(rule)
             added.add(i)
 
