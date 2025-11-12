@@ -57,6 +57,7 @@ class Sentence:
     alignments: dict = field(default_factory=dict)
     heads: dict = field(default_factory=dict)
     base_score: int = None
+    wl: WindowLinearizer = None
 
     @staticmethod
     def from_input(src, tgt):
@@ -87,11 +88,11 @@ class Sentence:
                 ret.alignments[cohort.dep_self] = options[ls[-1]]
                 ret.heads[cohort.dep_self] = cohort.dep_parent
                 break
+        ret.wl = WindowLinearizer(ret.source)
         return ret
 
-    def score(self, extra_rules):
-        wl = WindowLinearizer(self.source, extra_rules)
-        seq = [s[0] for s in wl.sequence]
+    def score(self, rule):
+        seq = self.wl.add_rule(rule)
         score = 0
         # TODO: is this the best metric?
         for idx, i in enumerate(seq):
@@ -110,27 +111,25 @@ class Sentence:
                 yield Rule(ltags=ltags, rtags=rtags, weight=weight,
                            mode=mode)
 
+    def weight(self, head, i, j):
+        return max(self.wl.get_weight_difference(head, i, j) + 1, 1)
+
     def gen_rules(self):
-        wl = WindowLinearizer(self.source)
-        seq = [s[0] for s in wl.sequence]
         self.base_score = 0
-        for idx, i in enumerate(seq):
-            for j in seq[idx:]:
+        for idx, i in enumerate(self.wl.sequence):
+            for j in self.wl.sequence[idx:]:
                 if self.alignments[j][-1] < self.alignments[i][0]:
                     self.base_score += 1
                     if self.heads[i] == j:
                         yield from self.expand_rule(
-                            j, i, 'R',
-                            max(wl.get_weight_difference(j, i, j) + 1, 1))
+                            j, i, 'R', self.weight(j, i, j))
                     elif self.heads[j] == i:
                         yield from self.expand_rule(
-                            i, j, 'L',
-                            max(wl.get_weight_difference(i, i, j) + 1, 1))
+                            i, j, 'L', self.weight(i, i, j))
                     elif self.heads[i] == self.heads[j]:
                         h = self.heads[i]
                         yield from self.expand_rule(
-                            j, i, 'S',
-                            max(wl.get_weight_difference(h, i, j) + 1, 1))
+                            j, i, 'S', self.weight(h, i, j))
                     else:
                         pass # TODO: shift rules
 
@@ -161,7 +160,7 @@ def generate_rule(corpus, count=100):
         diff = 0
         for sent in corpus:
             if rule.ltags < sent.tagset and rule.rtags < sent.tagset:
-                diff += sent.score([rule]) - sent.base_score
+                diff += sent.score(rule) - sent.base_score
         #print(diff, rs)
         if diff < 0:
             results.append((diff, rule))
@@ -181,8 +180,6 @@ if __name__ == '__main__':
     parser.add_argument('--count', type=int, default=100)
     args = parser.parse_args()
 
-    corpus = load_corpus(args.source, args.target)
-
     with open(args.output_rules, 'w') as fout:
 
         if args.initial_rules:
@@ -190,10 +187,14 @@ if __name__ == '__main__':
             with open(args.initial_rules) as fin:
                 fout.write(fin.read() + '\n')
 
+        corpus = load_corpus(args.source, args.target)
+
         for i in range(args.iterations):
             print(i)
             rule = generate_rule(corpus, args.count)
             if rule is None:
                 break
             fout.write(rule.to_string() + '\n')
+            for sent in corpus:
+                sent.wl.add_rule(rule, len(ALL_RULES))
             ALL_RULES.append(rule)
