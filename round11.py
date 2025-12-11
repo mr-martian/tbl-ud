@@ -1,14 +1,19 @@
 from cg3 import parse_binary_stream as parse_cg3
+from metrics import PER
 
 import argparse
 from collections import Counter, defaultdict
 from itertools import combinations
 import json
 import os
+import resource
 import sqlite3
 import subprocess
 import sys
-from tempfile import TemporaryDirectory
+from tempfile import TemporaryDirectory, NamedTemporaryFile
+import time
+
+START = time.time()
 
 RTYPES = ['remove', 'append', 'addcohort', 'rem-self', 'substitute',
           #'rem-parent'
@@ -19,7 +24,7 @@ DELIMITERS = "<$$$>" ;
 PROTECT (SOURCE) ;
 
 
-'''
+'''.lstrip()
 LEAF_POS = ['CCONJ', 'ADP', 'DET', 'PUNCT', 'INTJ', 'PART', 'AUX']
 
 parser = argparse.ArgumentParser()
@@ -38,6 +43,10 @@ parser.add_argument('--rule_count', type=int, default=25,
                     help='number of rules to try')
 parser.add_argument('--context_similarity', type=float, default=0.9,
                     help='threshold for discarding more complex context as equivalent')
+parser.add_argument('--append', action='store_true',
+                    help='retain any rules already present in output file')
+parser.add_argument('--max_sents', type=int, default=0,
+                    help='use only first N sentences')
 args = parser.parse_args()
 
 WEIGHTS = defaultdict(lambda: 1, json.loads(args.weights))
@@ -85,6 +94,8 @@ def collect_words_and_feats(window):
 
 with open(args.target, 'rb') as fin:
     target = list(parse_cg3(fin, windows_only=True))
+    if args.max_sents > 0:
+        target = target[:args.max_sents]
 target_words_and_feats = [collect_words_and_feats(w) for w in target]
 
 def gen_rules(window, slw, tlw):
@@ -356,6 +367,19 @@ def score_rule(rule, ipath, gpath, opath):
         score += score_window(slw, tlw, i)
     return score
 
+initial_rule_output = RULE_HEADER
+initial_source = args.source
+if args.append:
+    with open(args.out) as fin:
+        initial_rule_output = fin.read().strip() + '\n\n'
+        if not initial_rule_output.startswith(RULE_HEADER):
+            initial_rule_output = RULE_HEADER + initial_rule_output
+    new_source = NamedTemporaryFile(delete=False, delete_on_close=False)
+    initial_source = new_source.name
+    subprocess.run(['vislcg3', '--in-binary', '--out-binary', '-g',
+                    args.out, '-I', args.source, '-O', new_source.name],
+                   capture_output=True)
+
 with (TemporaryDirectory() as tmpdir,
       open(args.out, 'w') as rule_output):
     db_path = os.path.join(tmpdir, 'db.sqlite')
@@ -365,14 +389,16 @@ with (TemporaryDirectory() as tmpdir,
     cur.execute('CREATE TABLE context(rtype, rule TEXT, relation TEXT, count INT, error_label TEXT)')
     cur.execute('CREATE TABLE tests(cohort INTEGER, pattern TEXT)')
     con.commit()
+    rule_output.write(initial_rule_output)
 
     for iteration in range(args.iterations):
         src_path = os.path.join(tmpdir, f'output.{iteration}.bin')
         if iteration == 0:
-            src_path = args.source
+            src_path = initial_source
         with open(src_path, 'rb') as fin:
             source = list(parse_cg3(fin, windows_only=True))
         base_score = sum(score_window(s, t, i) for i, (s, t) in enumerate(zip(source, target)))
+        base_per = PER(source, target)
         tgt_path = os.path.join(tmpdir, f'output.{iteration+1}.bin')
 
         for table in ['errors', 'context', 'tests']:
@@ -413,9 +439,9 @@ with (TemporaryDirectory() as tmpdir,
             con.commit()
 
         rule_output.write('####################\n')
-        rule_output.write(f'## {iteration}: {base_score}\n')
+        rule_output.write(f'## {iteration}: {base_score} PER_lem {base_per[0]:.2f}% PER_form {base_per[1]:.2f}%\n')
         rule_output.write('####################\n')
-        print(f'{iteration=}, {base_score=}, {len(EXCLUDE)=}')
+        print(f'{iteration=}, {base_score=}, {len(EXCLUDE)=} PER_lem {base_per[0]:.2f}% PER_form {base_per[1]:.2f}%')
 
         failed_errors = set()
         non_failed = set()
@@ -460,3 +486,8 @@ with (TemporaryDirectory() as tmpdir,
         subprocess.run(['vislcg3', '--in-binary', '--out-binary', '-g',
                         gpath, '-I', src_path, '-O', tgt_path],
                        capture_output=True)
+
+print(json.dumps({
+    'max_mem_kb': resource.getrusage(resource.RUSAGE_SELF).ru_maxrss,
+    'time_sec': time.time() - START,
+}), file=sys.stderr)

@@ -13,6 +13,7 @@ from tempfile import TemporaryDirectory
 RTYPES = ['grandparent', 'sibling', 'child', 'relation']
 RULE_HEADER = '''
 DELIMITERS = "<$$$>" ;
+LIST Relation = /^@.*$/r ;
 
 '''
 LEAF_POS = ['CCONJ', 'ADP', 'DET', 'PUNCT', 'INTJ', 'PART', 'AUX']
@@ -121,7 +122,7 @@ def format_rule(rtype, target, tags=None, desttags=None, ctarget=None,
     if rtype == 'relation':
         return f'SUBSTITUTE ({tags}) ({desttags}) (*) IF (0 {target}) {ctx} ;'
     elif rtype == 'child':
-        return f'SWITCHPARENT WITHCHILD (*) (*) IF (0 {ctarget}) (p {target}) {ctx} ;'
+        return f'WITH {target} (c {ctarget}) {ctx} {{\n\tSWITCHPARENT WITHCHILD (*) _C2_ ;\n\tSUBSTITUTE Relation $$Relation _C2_ IF (jC1 $$Relation) ;\n}} ;'
     elif rtype == 'sibling':
         return f'SETPARENT (*) (0 {target}) {ctx} TO (s {ctarget}) ;'
     elif rtype == 'grandparent':
