@@ -86,6 +86,16 @@ if not args.resume:
 
 STAGES = [None, 'initial_size', 'iterations', 'increment', 'similarity', 'filters', 'errors']
 
+def run_block(tmpdir, block):
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        futures = []
+        for row in block:
+            futures.append(executor.submit(run_config, tmpdir, row))
+        results = []
+        for future in concurrent.futures.as_completed(futures):
+            results.append(future.result())
+        return results
+
 for stage_num, stage in enumerate(STAGES):
     print('STAGE', stage_num, stage)
     if stage_num != 0:
@@ -106,15 +116,10 @@ for stage_num, stage in enumerate(STAGES):
                 new.append(n)
         cur.executemany('INSERT INTO jobs VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, 0)', new)
         con.commit()
-    with (concurrent.futures.ThreadPoolExecutor(max_workers=args.cores) as executor,
-          tempfile.TemporaryDirectory() as tmpdir):
-        futures = []
+    with tempfile.TemporaryDirectory() as tmpdir:
         cur.execute('SELECT rowid, * FROM jobs WHERE completed = 0 AND stage = ?', (stage_num,))
         rows = cur.fetchall()
-        for row in rows:
-            futures.append(executor.submit(run_config, tmpdir, row))
-        results = []
-        for future in concurrent.futures.as_completed(futures):
-            results.append(future.result())
-        cur.executemany('UPDATE jobs SET completed = 1, per_lem = ?, per_form = ?, time = ?, mem = ? WHERE rowid = ?', results)
-        con.commit()
+        for i in range(0, len(rows), args.cores):
+            results = run_block(tmpdir, rows[i:i+args.cores])
+            cur.executemany('UPDATE jobs SET completed = 1, per_lem = ?, per_form = ?, time = ?, mem = ? WHERE rowid = ?', results)
+            con.commit()
