@@ -21,7 +21,7 @@ weight_settings = [('plain', '{}'),
 params = []
 for filters in ['10', '25', '50']:
     for similarity in ['0.7', '0,8', '0.9', '1.0']:
-        for name, weights in 
+        for name, weights in weight_settings:
             params.append([f'grammars/g_{filters}_{similarity}_{name}.cg3',
                            filters, similarity, weights])
 with concurrent.futures.ThreadPoolExecutor() as executor:
