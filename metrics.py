@@ -27,3 +27,12 @@ def PER(source, target):
     deletions = max(0, swords - twords)
     return (100 * (1 - float(lcorrect - deletions)/twords),
             100 * (1 - float(fcorrect - deletions)/twords))
+
+if __name__ == '__main__':
+    from cg3 import parse_binary_stream
+    import sys
+    with (open(sys.argv[1], 'rb') as f1,
+          open(sys.argv[2], 'rb') as f2):
+        print('%s\t%s' % PER(
+            list(parse_binary_stream(f1, windows_only=True)),
+            list(parse_binary_stream(f2, windows_only=True))))
