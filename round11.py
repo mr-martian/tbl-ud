@@ -391,14 +391,23 @@ with (TemporaryDirectory() as tmpdir,
     con.commit()
     rule_output.write(initial_rule_output)
 
-    for iteration in range(args.iterations):
-        src_path = os.path.join(tmpdir, f'output.{iteration}.bin')
-        if iteration == 0:
-            src_path = initial_source
+    def log_scores(iteration, src_path):
+        global target, rule_output, EXCLUDE
         with open(src_path, 'rb') as fin:
             source = list(parse_cg3(fin, windows_only=True))
         base_score = sum(score_window(s, t, i) for i, (s, t) in enumerate(zip(source, target)))
         base_per = PER(source, target)
+        rule_output.write('####################\n')
+        rule_output.write(f'## {iteration}: {base_score} PER_lem {base_per[0]:.2f}% PER_form {base_per[1]:.2f}%\n')
+        rule_output.write('####################\n')
+        print(f'{iteration=}, {base_score=}, {len(EXCLUDE)=} PER_lem {base_per[0]:.2f}% PER_form {base_per[1]:.2f}%')
+        return source, base_score
+
+    for iteration in range(args.iterations):
+        src_path = os.path.join(tmpdir, f'output.{iteration}.bin')
+        if iteration == 0:
+            src_path = initial_source
+        source, base_score = log_scores(iteration, src_path)
         tgt_path = os.path.join(tmpdir, f'output.{iteration+1}.bin')
 
         for table in ['errors', 'context', 'tests']:
@@ -437,11 +446,6 @@ with (TemporaryDirectory() as tmpdir,
             cur.executemany('INSERT INTO context VALUES(?, ?, ?, ?, ?)',
                             rules[:args.beam])
             con.commit()
-
-        rule_output.write('####################\n')
-        rule_output.write(f'## {iteration}: {base_score} PER_lem {base_per[0]:.2f}% PER_form {base_per[1]:.2f}%\n')
-        rule_output.write('####################\n')
-        print(f'{iteration=}, {base_score=}, {len(EXCLUDE)=} PER_lem {base_per[0]:.2f}% PER_form {base_per[1]:.2f}%')
 
         failed_errors = set()
         non_failed = set()
@@ -486,6 +490,8 @@ with (TemporaryDirectory() as tmpdir,
         subprocess.run(['vislcg3', '--in-binary', '--out-binary', '-g',
                         gpath, '-I', src_path, '-O', tgt_path],
                        capture_output=True)
+    # log final values after all iterations
+    log_scores(args.iterations, tgt_path)
 
 print(json.dumps({
     'max_mem_kb': resource.getrusage(resource.RUSAGE_SELF).ru_maxrss,

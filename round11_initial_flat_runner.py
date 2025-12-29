@@ -2,11 +2,16 @@ import concurrent.futures
 import subprocess
 import time
 
+MACULA = True
+
 def run_config(grammar, filters, similarity, weights):
     print('starting', grammar)
     start = time.time()
+    fn = 'hbo.train.bin'
+    if MACULA:
+        fn = 'hbo-macula.train.bin'
     subprocess.run(['python3', 'round11.py',
-                    'hbo.train.bin', 'grc.train.bin',
+                    fn, 'grc.train.bin',
                     '300', grammar,
                     '--weights', weights,
                     '--count', filters,
@@ -30,4 +35,3 @@ with concurrent.futures.ThreadPoolExecutor() as executor:
         futures.append(executor.submit(run_config, *p))
     for future in concurrent.futures.as_completed(futures):
         pass
-
