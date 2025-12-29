@@ -24,10 +24,11 @@ def run_config(grammar, filters, similarity, weights):
 weight_settings = [('plain', '{}'),
                    ('feats', '{"missing_feats": 20}')]
 params = []
+prefix = 'gm' if MACULA else 'g'
 for filters in ['10', '25', '50']:
     for similarity in ['0.7', '0.8', '0.9', '1.0']:
         for name, weights in weight_settings:
-            params.append([f'grammars/g_{filters}_{similarity}_{name}.cg3',
+            params.append([f'grammars/{prefix}_{filters}_{similarity}_{name}.cg3',
                            filters, similarity, weights])
 with concurrent.futures.ThreadPoolExecutor() as executor:
     futures = []
