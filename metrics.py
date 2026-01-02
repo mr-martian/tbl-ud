@@ -45,7 +45,7 @@ if __name__ == '__main__':
     target_feats = None
     if args.target_feats:
         with open(args.target_feats) as fin:
-        target_feats = set(json.loads(fin.read()))
+            target_feats = set(json.loads(fin.read()))
     with (open(args.src, 'rb') as f1,
           open(args.tgt, 'rb') as f2):
         print('%s\t%s' % PER(
