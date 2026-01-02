@@ -47,10 +47,16 @@ parser.add_argument('--append', action='store_true',
                     help='retain any rules already present in output file')
 parser.add_argument('--max_sents', type=int, default=0,
                     help='use only first N sentences')
+parser.add_argument('--target_feats', action='store',
+                    help='skip removing features not in this JSON list')
 args = parser.parse_args()
 
 WEIGHTS = defaultdict(lambda: 1, json.loads(args.weights))
 EXCLUDE = set()
+TARGET_FEATS = None
+if args.target_feats:
+    with open(args.target_feats) as fin:
+        TARGET_FEATS = set(json.loads(fin.read()))
 
 def desc_r(reading):
     ret = reading.lemma
@@ -77,6 +83,8 @@ def tags_to_feature_dict(tags, dct=None):
     for t in tags:
         if '=' in t:
             k, v = t.split('=', 1)
+            if TARGET_FEATS is not None and k not in TARGET_FEATS:
+                continue
             dct[k][v] += 1
     return dct
 
@@ -396,7 +404,7 @@ with (TemporaryDirectory() as tmpdir,
         with open(src_path, 'rb') as fin:
             source = list(parse_cg3(fin, windows_only=True))
         base_score = sum(score_window(s, t, i) for i, (s, t) in enumerate(zip(source, target)))
-        base_per = PER(source, target)
+        base_per = PER(source, target, TARGET_FEATS)
         rule_output.write('####################\n')
         rule_output.write(f'## {iteration}: {base_score} PER_lem {base_per[0]:.2f}% PER_form {base_per[1]:.2f}%\n')
         rule_output.write('####################\n')
