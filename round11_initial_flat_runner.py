@@ -1,5 +1,6 @@
 import argparse
 import concurrent.futures
+import datetime
 import subprocess
 import time
 
@@ -11,7 +12,7 @@ parser.add_argument('tgt_feats')
 args = parser.parse_args()
 
 def run_config(grammar, filters, similarity, weights):
-    print('starting', grammar)
+    print('starting', grammar, 'at', datetime.datetime.now())
     start = time.time()
     subprocess.run(['python3', 'round11.py',
                     args.src, args.tgt,
@@ -23,10 +24,12 @@ def run_config(grammar, filters, similarity, weights):
                     '--context_similarity', similarity,
                     '--target_feats', args.tgt_feats],
                    capture_output=True)
-    print('finished', grammar, 'after', time.time() - start, 'seconds')
+    print('finished', grammar, 'after', time.time() - start, 'seconds at',
+          datetime.datetime.now())
 
 weight_settings = [('plain', '{}'),
-                   ('feats', '{"missing_feats": 20}')]
+                   #('feats', '{"missing_feats": 20}'),
+                   ]
 params = []
 for filters in ['10', '25', '50']:
     for similarity in ['0.7', '0.8', '0.9', '1.0']:

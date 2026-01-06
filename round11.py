@@ -354,7 +354,7 @@ def score_window(slw, tlw, index):
     score += WEIGHTS['missing'] * missing.total()
     score += WEIGHTS['extra'] * extra.total()
     score += WEIGHTS['ambig'] * (src_words.total() - len(slw.cohorts))
-    score += WEIGHTS['ins'] * len([s for s in slw.cohorts if any(r.lemma == '"<ins>"' for r in s.readings)])
+    score += WEIGHTS['ins'] * len([s for s in slw.cohorts if s.static.lemma == '"<ins>"'])
     score += WEIGHTS['unk'] * sum([ct for lm, ct in src_words.items()
                                    if lm.startswith('"@')])
     mf = 0
