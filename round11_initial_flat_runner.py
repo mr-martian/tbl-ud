@@ -18,9 +18,9 @@ def run_config(grammar, filters, similarity, weights):
                     args.src, args.tgt,
                     '300', grammar,
                     '--weights', weights,
-                    '--count', filters,
-                    '--beam', filters,
-                    '--rule_count', filters,
+                    '--count', filters[0],
+                    '--beam', filters[1],
+                    '--rule_count', filters[0],
                     '--context_similarity', similarity,
                     '--target_feats', args.tgt_feats],
                    capture_output=True)
@@ -31,10 +31,10 @@ weight_settings = [('plain', '{}'),
                    #('feats', '{"missing_feats": 20}'),
                    ]
 params = []
-for filters in ['10', '25', '50']:
+for filters in [('10', '3'), ('25', '5'), ('50', '10')]:
     for similarity in ['0.7', '0.8', '0.9', '1.0']:
         for name, weights in weight_settings:
-            params.append([f'grammars/{args.prefix}_{filters}_{similarity}_{name}.cg3',
+            params.append([f'grammars/{args.prefix}_{filters[0]}_{similarity}_{name}.cg3',
                            filters, similarity, weights])
 with concurrent.futures.ThreadPoolExecutor() as executor:
     futures = []
