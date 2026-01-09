@@ -20,6 +20,10 @@ def norm(s):
     return unicodedata.normalize('NFC', s.lower())
 
 form2strong = defaultdict(set)
+form2sdbh = defaultdict(set)
+
+strong2form = defaultdict(set)
+sdbh2form = defaultdict(set)
 
 for fname in glob.glob('/home/daniel/hbo-UD/macula-hebrew/WLC/nodes/*.xml'):
     tree = ET.parse(fname)
@@ -30,8 +34,17 @@ for fname in glob.glob('/home/daniel/hbo-UD/macula-hebrew/WLC/nodes/*.xml'):
         for m in node.iter('m'):
             if 'oshb-strongs' in m.attrib:
                 form2strong[form].add(m.attrib['oshb-strongs'])
+                strong2form[m.attrib['oshb-strongs']].add(form)
+            if 'SDBH' in m.attrib:
+                form2sdbh[form].add(m.attrib['SDBH'])
+                sdbh2form[m.attrib['SDBH']].add(form)
+
+strong_count = Counter(len(v) for v in strong2form.values())
+sdbh_count = Counter(len(v) for v in sdbh2form.values())
+print(f'{strong_count.most_common()=}, {sdbh_count.most_common()=}')
 
 strong2tags = defaultdict(set)
+sdbh2tags = defaultdict(set)
 
 def parse_feats(field):
     if field == '_':
@@ -66,8 +79,27 @@ for fname in glob.glob('/home/daniel/UD_Ancient_Greek-PTNK/*.conllu'):
         data = [lem, upos] + get_feats(GRC_SPEC, upos, feats, misc)
         for s in form2strong[form]:
             strong2tags[s].add(tuple(data))
+        for s in form2sdbh[form]:
+            sdbh2tags[s].add(tuple(data))
 
 pairs = set()
+
+def check_upos(h, g):
+    if h == '_' or g == '_':
+        return False
+    if h == 'DET':
+        if g in ['NOUN', 'VERB', 'AUX', 'ADP', 'ADV']:
+            return False
+    if h == 'PROPN':
+        return (g in ['NOUN', 'PROPN'])
+    if h == 'CCONJ':
+        return (g == 'CCONJ')
+    if g == 'CCONJ':
+        return (h == 'CCONJ')
+    if g == 'DET':
+        if h in ['NOUN', 'VERB', 'AUX', 'ADP', 'ADV']:
+            return False
+    return True
 
 for fname in glob.glob('/home/daniel/hbo-UD/UD_Ancient_Hebrew-PTNK/*.conllu'):
     for form, lem, upos, feats, misc in iter_words(fname):
@@ -75,7 +107,8 @@ for fname in glob.glob('/home/daniel/hbo-UD/UD_Ancient_Hebrew-PTNK/*.conllu'):
         data = [lem, upos] + get_feats(HBO_SPEC, upos, feats, misc)
         for s in ls:
             for tg in strong2tags[s]:
-                pairs.add((tuple(data), tg))
+                if check_upos(data[1], tg[1]):
+                    pairs.add((tuple(data), tg))
 
 root = ET.Element('dictionary')
 ET.SubElement(root, 'alphabet')

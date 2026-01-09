@@ -153,12 +153,14 @@ def gen_rules(window, slw, tlw):
             rf = dict([t.split('=', 1) for t in r.tags if '=' in t])
             sf = src_feats[d]
             tf = tgt_feats[d]
+            del_feats = []
             for k, v in rf.items():
                 if sf[k][v] <= tf[k][v]:
                     continue
                 st = sf[k].total()
                 tt = tf[k].total()
                 if st > tt:
+                    del_feats.append(f'{k}={v}')
                     rules.append(('substitute', f'{k}={v}', '*')+suf)
                 for v2 in tf[k]:
                     if v != v2 and sf[k][v2] < tf[k][v2]:
@@ -169,6 +171,11 @@ def gen_rules(window, slw, tlw):
                 diff = +(tf[k] - sf[k])
                 for v in diff:
                     rules.append(('substitute', '*', f'{k}={v}')+suf)
+            if len(del_feats) > 1:
+                del_feats.sort()
+                for i, fi in enumerate(del_feats):
+                    for fj in del_feats[i+1:]:
+                        rules.append(('substitute', f'{fi} {fj}', '*')+suf)
     def error_key(row):
         return '-'.join(row[k] for k in [0, 1, 2, 5])
     return [r for r in rules if error_key(r) not in EXCLUDE]
@@ -221,18 +228,19 @@ def describe_cohort(cohort, window):
         tag = rd.tags[0]
         if tag == 'SOURCE':
             tag += ' ' + rd.tags[1]
-        yield f'({tag} {rel})'
-        yield f'({rd.lemma} {tag} {rel})'
+        yield f'({tag} {rel})', False
+        yield f'({rd.lemma} {tag} {rel})', False
         for feat in rd.tags:
             if '=' in feat:
-                yield f'({tag} {rel} {feat})'
-                yield f'({rd.lemma} {tag} {rel} {feat})'
+                yield f'({tag} {rel} {feat})', False
+                yield f'({rd.lemma} {tag} {rel} {feat})', False
+                yield f'({feat})', True
         for cp in cpos:
-            yield f'({tag} {rel}) LINK c ({cp})'
-            yield f'({rd.lemma} {tag} {rel}) LINK c ({cp})'
+            yield f'({tag} {rel}) LINK c ({cp})', False
+            yield f'({rd.lemma} {tag} {rel}) LINK c ({cp})', False
         if prel:
-            yield f'({tag} {rel}) LINK p ({prel})'
-            yield f'({rd.lemma} {tag} {rel}) LINK p ({prel})'
+            yield f'({tag} {rel}) LINK p ({prel})', False
+            yield f'({rd.lemma} {tag} {rel}) LINK p ({prel})', False
 
 def collect_neighbors(slw, idx, dct):
     ds = slw.cohorts[idx].dep_self
@@ -247,15 +255,15 @@ def collect_neighbors(slw, idx, dct):
         elif cohort.dep_parent == ds:
             dct['c'].add(cohort.dep_self)
 
-def select_contexts(cur, dct):
+def select_contexts(cur, dct, rtype):
     RANGE = 10
     ret = defaultdict(Counter)
     for rel in dct:
         cs = list(dct[rel])
         qs = ', '.join(['?']*len(cs))
         cur.execute(
-            f'SELECT cohort, pattern FROM tests WHERE cohort IN ({qs})',
-            cs)
+            f'SELECT cohort, pattern FROM tests WHERE is_feat = ? AND cohort IN ({qs})',
+            [(rtype == 'substitute' and rel != 't')] + cs)
         d2 = defaultdict(set)
         c2 = Counter()
         # shorter tests first
@@ -311,9 +319,14 @@ def contextualize_rules(contexts, dct, ekey, include_parent=False):
                                ekey)
 
 def run_grammar(ipath, gpath, opath):
-    subprocess.run(['vislcg3', '--in-binary', '--out-binary', '-g',
-                    gpath, '-I', ipath, '-O', opath],
-                   capture_output=True, check=True)
+    try:
+        subprocess.run(['vislcg3', '--in-binary', '--out-binary', '-g',
+                        gpath, '-I', ipath, '-O', opath],
+                       capture_output=True, check=True)
+    except subprocess.CalledProcessError:
+        with open(gpath) as fin:
+            print(fin.read())
+        raise
     with open(opath, 'rb') as fout:
         yield from parse_cg3(fout, windows_only=True)
 
@@ -395,7 +408,7 @@ with (TemporaryDirectory() as tmpdir,
     cur = con.cursor()
     cur.execute('CREATE TABLE errors(rule, tags1, tags2, window, cohort, cohort_key)')
     cur.execute('CREATE TABLE context(rtype, rule TEXT, relation TEXT, count INT, error_label TEXT)')
-    cur.execute('CREATE TABLE tests(cohort INTEGER, pattern TEXT)')
+    cur.execute('CREATE TABLE tests(cohort INTEGER, pattern TEXT, is_feat)')
     con.commit()
     rule_output.write(initial_rule_output)
 
@@ -427,8 +440,8 @@ with (TemporaryDirectory() as tmpdir,
                             gen_rules(window, slw, tlw))
             for ch in slw.cohorts:
                 cur.executemany(
-                    'INSERT INTO tests(cohort, pattern) VALUES(?, ?)',
-                    [(ch.dep_self, dc) for dc in describe_cohort(ch, slw)])
+                    'INSERT INTO tests(cohort, pattern, is_feat) VALUES(?, ?, ?)',
+                    [(ch.dep_self, dc, is_feat) for dc, is_feat in describe_cohort(ch, slw)])
             con.commit()
 
         patterns = []
@@ -444,7 +457,7 @@ with (TemporaryDirectory() as tmpdir,
             for wnum, cnum in cur.fetchall():
                 slw = source[wnum]
                 collect_neighbors(slw, cnum, neighbors)
-            dct = select_contexts(cur, neighbors)
+            dct = select_contexts(cur, neighbors, rule)
             rules = list(contextualize_rules(
                 dct,
                 {'rtype': rule, 'tags': tags1, 'desttags': tags2},

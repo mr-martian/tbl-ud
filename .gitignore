@@ -12,3 +12,4 @@ callgrind*
 *.tsv
 *.prof
 *.log
+!rempunct.cg3

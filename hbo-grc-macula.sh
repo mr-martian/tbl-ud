@@ -15,12 +15,6 @@ python3 dix_from_macula.py
 
 lt-comp lr generated/hbo-grc/macula.dix generated/hbo-grc/macula.bin
 
-cat <<EOF > rempunct.cg3
-DELIMITERS = "<\$\$\$>" ;
-REMCOHORT (SOURCE PUNCT) ;
-MERGECOHORTS ("<\$1\$5>"v "\$2\$6"v SOURCE VSTR:\$3 VSTR:\$4 "@null" X VSTR:\$4) ("<\\(.+\\)>"r "\\([^<>]+\\)"r SOURCE /^ExtPos=\\(.+\\)\$/r /^\\(@.+\\)\$/r) WITH (c ("<\\(.+\\)>"r "\\([^<>]+\\)"r SOURCE @fixed)) ;
-EOF
-
 cat sources/hbo-short-train.conllu | make_hbo > generated/hbo-grc/hbo-macula.train.bin
 cat "$gin" | make_grc train
 cat sources/hbo-short-test.conllu | make_hbo > generated/hbo-grc/hbo-macula.test.bin
