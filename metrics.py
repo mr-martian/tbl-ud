@@ -42,6 +42,7 @@ if __name__ == '__main__':
     parser.add_argument('src')
     parser.add_argument('tgt')
     parser.add_argument('--target_feats', action='store')
+    args = parser.parse_args()
     target_feats = None
     if args.target_feats:
         with open(args.target_feats) as fin:
