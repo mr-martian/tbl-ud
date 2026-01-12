@@ -3,7 +3,7 @@
 version=$1
 
 make_eng() {
-    python3 usfm2txt.py $version $1 | apertium -f line -d /home/daniel/apertium/apertium-data/apertium-eng eng-tagger | cg-conv -a -Z > generated/hbo-eng/eng.$version.$1.bin
+    python3 usfm2txt.py $version $1 | apertium -f line -d /home/daniel/apertium/apertium-data/apertium-eng eng-tagger-case | sed 's/ _ / /g' | cg-conv -a -Z > generated/hbo-eng/eng.$version.$1.bin
 }
 
 make_hbo() {
