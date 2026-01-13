@@ -1,6 +1,8 @@
 import argparse
 import glob
+import json
 import re
+import sys
 
 parser = argparse.ArgumentParser()
 parser.add_argument('version')
@@ -44,6 +46,7 @@ books = [('02', 'Genesis'), ('03', 'Exodus'),
          ('06', 'Deuteronomy'), ('09', 'Ruth')]
 chapter = 0
 verse = 0
+skipped = set()
 def include():
     if verse_idx >= len(verses):
         return False
@@ -71,6 +74,8 @@ for pfx, book in books:
                         verse_idx += 1
                     if verse == 1:
                         while verse_idx < len(verses) and chapter == verses[verse_idx][1] + 1:
+                            skipped.add(verse_idx)
+                            skipped.add(verse_idx - 1)
                             print('null')
                             verse_idx += 1
                     if include():
@@ -79,3 +84,5 @@ for pfx, book in books:
         print(' _ '.join(words))
         words = []
         verse_idx += 1
+
+print(json.dumps(sorted(skipped)), file=sys.stderr)

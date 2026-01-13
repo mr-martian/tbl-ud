@@ -49,6 +49,8 @@ parser.add_argument('--max_sents', type=int, default=0,
                     help='use only first N sentences')
 parser.add_argument('--target_feats', action='store',
                     help='skip removing features not in this JSON list')
+parser.add_argument('--skip_windows', action='store',
+                    help='skip windows with indecies in this JSON list')
 args = parser.parse_args()
 
 WEIGHTS = defaultdict(lambda: 1, json.loads(args.weights))
@@ -57,6 +59,10 @@ TARGET_FEATS = None
 if args.target_feats:
     with open(args.target_feats) as fin:
         TARGET_FEATS = set(json.loads(fin.read()))
+SKIP_WINDOWS = set()
+if args.skip_windows:
+    with open(args.skip_windows) as fin:
+        SKIP_WINDOWS = set(json.loads(fin.read()))
 
 def desc_r(reading):
     ret = reading.lemma
@@ -107,6 +113,8 @@ with open(args.target, 'rb') as fin:
 target_words_and_feats = [collect_words_and_feats(w) for w in target]
 
 def gen_rules(window, slw, tlw):
+    if window in SKIP_WINDOWS:
+        return []
     rules = []
     src_words, src_feats = collect_words_and_feats(slw)
     tgt_words, tgt_feats = target_words_and_feats[window]
@@ -338,7 +346,9 @@ def calc_intersection(rules: list, ipath, gpath: str, opath: str):
             fout.write(r[2].replace('{NUM}', str(i)) + '\n')
     targets = defaultdict(set)
     contexts = defaultdict(set)
-    for window in run_grammar(ipath, gpath, opath):
+    for idx, window in enumerate(run_grammar(ipath, gpath, opath)):
+        if idx in SKIP_WINDOWS:
+            continue
         for cohort in window.cohorts:
             for tag, heads in cohort.relations.items():
                 if tag[0] == 'r' and tag[1:].isdigit():
@@ -358,6 +368,8 @@ def calc_intersection(rules: list, ipath, gpath: str, opath: str):
     return intersections
 
 def score_window(slw, tlw, index):
+    if index in SKIP_WINDOWS:
+        return 0
     score = 0
     score += WEIGHTS['cohorts'] * abs(len(slw.cohorts) - len(tlw.cohorts))
     src_words, src_feats = collect_words_and_feats(slw)
@@ -436,6 +448,8 @@ with (TemporaryDirectory() as tmpdir,
         con.commit()
 
         for window, (slw, tlw) in enumerate(zip(source, target)):
+            if window in SKIP_WINDOWS:
+                continue
             cur.executemany('INSERT INTO errors VALUES(?, ?, ?, ?, ?, ?)',
                             gen_rules(window, slw, tlw))
             for ch in slw.cohorts:
