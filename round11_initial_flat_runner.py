@@ -18,7 +18,7 @@ def run_config(grammar, filters, similarity, weights):
     skip = []
     if args.skip_windows:
         skip = ['--skip_windows', args.skip_windows]
-    subprocess.run(['python3', 'round11.py',
+    subprocess.run(['python3', 'round12.py',
                     args.src, args.tgt,
                     '300', grammar,
                     '--weights', weights,
