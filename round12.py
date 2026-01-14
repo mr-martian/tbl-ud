@@ -53,6 +53,10 @@ parser.add_argument('--target_feats', action='store',
                     help='skip removing features not in this JSON list')
 parser.add_argument('--skip_windows', action='store',
                     help='skip windows with indecies in this JSON list')
+parser.add_argument('--score_report', action='store_true',
+                    help='print the contribution of each factor to the final error score')
+parser.add_argument('--rtypes', action='store',
+                    help='only generate certain rule types')
 args = parser.parse_args()
 
 WEIGHTS = defaultdict(lambda: 1, json.loads(args.weights))
@@ -65,6 +69,8 @@ SKIP_WINDOWS = set()
 if args.skip_windows:
     with open(args.skip_windows) as fin:
         SKIP_WINDOWS = set(json.loads(fin.read()))
+if args.rtypes:
+    RTYPES = json.loads(args.rtypes)
 
 def desc_r(reading):
     ret = reading.lemma
@@ -351,7 +357,7 @@ def run_windows(gpath, windows):
 
 def calc_intersection(rules: list, ipath, gpath: str, opath: str):
     if not rules:
-        return []
+        return [], {}
     with open(gpath, 'w') as fout:
         for i, r in enumerate(rules):
             fout.write(r[2].replace('{NUM}', str(i)) + '\n')
@@ -572,6 +578,20 @@ with (TemporaryDirectory() as tmpdir,
                        capture_output=True)
     # log final values after all iterations
     log_scores(args.iterations, tgt_path)
+
+if args.score_report:
+    factors = ['cohorts', 'missing', 'extra', 'ambig', 'ins', 'unk',
+               'missing_feats', 'extra_feats']
+    scores = []
+    for f in factors:
+        WEIGHTS = {fn: 0 for fn in factors}
+        WEIGHTS[f] = 1
+        scores.append(sum(score_window(s, t, i)
+                          for i, (s, t) in enumerate(zip(source, target))))
+    total = sum(scores)
+    for f, s in zip(factors, scores):
+        p = (100.0 * s) / total
+        print(f, s, f'{p:0.2f}%')
 
 print(json.dumps({
     'max_mem_kb': resource.getrusage(resource.RUSAGE_SELF).ru_maxrss,
