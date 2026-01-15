@@ -4,7 +4,7 @@ hin=~/hbo-UD/UD_Ancient_Hebrew-PTNK/hbo_ptnk-ud-train.conllu
 gin=~/UD_Ancient_Greek-PTNK/grc_ptnk-ud-train.conllu
 
 make_grc() {
-  python3 conllu2apertium.py --surface NOUN:Gender DET:PronType PROPN:Gender --feats_file generated/hbo-grc/grc.$1.feats.json | cg-conv -a -Z --dep-delimit > generated/hbo-grc/grc.$1.bin
+  python3 conllu2apertium.py --surface NOUN:Gender DET:PronType PROPN:Gender --feats_file generated/hbo-grc/grc.$1.feats.json | cg-conv -a | cg-conv -Z --dep-delimit > generated/hbo-grc/grc.$1.bin
 }
 
 make_hbo() {

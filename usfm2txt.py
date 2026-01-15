@@ -69,19 +69,19 @@ for pfx, book in books:
                 elif line.startswith(r'\v'):
                     verse = int(line.split()[1])
                     if not include() and words:
-                        print(' _ '.join(words))
+                        print(' _ '.join(words), '!!!')
                         words = []
                         verse_idx += 1
                     if verse == 1:
                         while verse_idx < len(verses) and chapter == verses[verse_idx][1] + 1:
                             skipped.add(verse_idx)
                             skipped.add(verse_idx - 1)
-                            print('null')
+                            print('null !!!')
                             verse_idx += 1
                     if include():
                         words += parse_line(line)
     if words:
-        print(' _ '.join(words))
+        print(' _ '.join(words), '!!!')
         words = []
         verse_idx += 1
 
