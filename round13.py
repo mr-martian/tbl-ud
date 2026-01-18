@@ -26,6 +26,7 @@ RTYPES = [
     'feat2func',
     'feat-from-func',
     'agreement',
+    'add-feat',
 ]
 RULE_HEADER = '''
 OPTIONS += addcohort-attach ;
@@ -165,12 +166,17 @@ WITH ({target}) IF ({ctx} + {tag1}) {{
     SUBSTITUTE (*) (VSTR:$1) (*) IF (jC1 {tag1}) ;
 }} ;
         '''.strip()
+    elif rtype == 'add-feat':
+        return f'SUBSTITUTE (*) ({tag2}) ({target}) - (/^{tag1}=.*$/r) ;'
 
 def format_relation(target, ctx):
-    return f'''
+    if ctx:
+        return f'''
 ADDRELATION (tr{{NUM}}) (*) (0 ({target})) TO (0 (*)) ;
 ADDRELATION (r{{NUM}}) (*) (0 ({target})) TO ({ctx}) ;
-    '''.strip()
+        '''.strip()
+    else:
+        return f'ADDRELATION (tr{{NUM}}) (*) (0 ({target})) TO (0 (*)) ;'
 
 def source_lex(cohort):
     for r in cohort.readings:
@@ -294,6 +300,11 @@ def gen_rules(window, slw, tlw):
                     feat = f'{k}={v}'
                     for i, c in context_with_feat(cohort, feat):
                         yield ('agreement', lexical_desc[idx], c, k, feat)
+                    yield ('add-feat', reading.tags[0], None, k, feat)
+                    for alt in reading.tags:
+                        if '=' in alt:
+                            yield ('add-feat', reading.tags[0] + ' ' + alt,
+                                   None, k, feat)
 
 def run_grammar(ipath, gpath, opath):
     try:
