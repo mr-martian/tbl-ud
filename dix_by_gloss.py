@@ -21,7 +21,7 @@ def process_feat_list(ls):
 sfeats = process_feat_list(args.sfeats)
 tfeats = process_feat_list(args.tfeats)
 
-def entries(sent, feats):
+def entries(sent, feats, freq):
     ret = collections.defaultdict(set)
     for word in utils.conllu_words(sent):
         dct = utils.conllu_feature_dict(word[9], True)
@@ -31,6 +31,7 @@ def entries(sent, feats):
             if f in dct:
                 ls.append(dct[f])
         ret[dct.get('Gloss')].add(tuple(ls))
+        freq[tuple(ls)] += 1
     return ret
 
 def same_gloss(src, tgt):
@@ -44,9 +45,12 @@ def same_gloss(src, tgt):
 
 dix = collections.defaultdict(set)
 
+lfreq = collections.Counter()
+rfreq = collections.Counter()
+
 for s1, s2 in utils.parallel_sentences(args.source, args.target):
-    d1 = entries(s1, sfeats)
-    d2 = entries(s2, tfeats)
+    d1 = entries(s1, sfeats, lfreq)
+    d2 = entries(s2, tfeats, rfreq)
     for g1 in d1:
         for g2 in d2:
             if same_gloss(g1, g2):
@@ -59,8 +63,9 @@ sdefs = ET.SubElement(root, 'sdefs')
 section = ET.SubElement(root, 'section', id='main', type='standard')
 tags = set()
 for w1 in sorted(dix.keys()):
-    for w2 in sorted(dix[w1]):
-        e = ET.SubElement(section, 'e')
+    seq = sorted(((rfreq[w2], w2) for w2 in dix[w1]), reverse=True)
+    for n, (freq, w2) in enumerate(seq):
+        e = ET.SubElement(section, 'e', w=str(n))
         e.tail = '\n    '
         p = ET.SubElement(e, 'p')
         l = ET.SubElement(p, 'l')

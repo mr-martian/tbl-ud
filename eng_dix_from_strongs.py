@@ -3,6 +3,7 @@ import collections
 import glob
 import subprocess
 import unicodedata
+import utils
 from xml.etree import ElementTree as ET
 
 parser = argparse.ArgumentParser()
@@ -11,6 +12,7 @@ args = parser.parse_args()
 
 form2strong = collections.defaultdict(set)
 strong2form = collections.defaultdict(set)
+form_freq = collections.Counter()
 
 drop_chars = "(),.“‘–?!”:;’,?'.!,()"
 
@@ -29,6 +31,7 @@ for pfx in ['02', '03', '04', '05', '06', '09']:
                     strong = w.split('"')[1]
                     form2strong[form].add(strong)
                     strong2form[strong].add(form)
+                    form_freq[form] += 1
 
 ana = b'\0'.join(f.encode('utf-8') for f in sorted(form2strong))
 proc = subprocess.run(
@@ -79,7 +82,7 @@ def get_feats(line):
         tags += [f for f in feats if f.startswith(fn+'=')]
     strong = [f for f in feats if f.startswith('LId[Strongs]=')][0].split('=')[1]
     return (strong, tuple(tags))
-        
+
 strong2hbo = collections.defaultdict(set)
 for fname in glob.glob('../hbo-UD/UD_Ancient_Hebrew-PTNK/*.conllu'):
     with open(fname) as fin:
@@ -94,63 +97,25 @@ for fname in glob.glob('../hbo-UD/UD_Ancient_Hebrew-PTNK/*.conllu'):
 #print([s for s in strong2hbo if s not in strong2form])
 #print([s for s in strong2form if s not in strong2hbo])
 
-# TODO: Strong's b, c, d, i, k, l, m, s
+strong2form['Hb'].add('in')
+strong2form['Hc'].add('and')
+strong2form['Hd'].add('the')
+#strong2form['Hi'].add('') question mark
+strong2form['Hk'].add('as')
+strong2form['Hl'].add('to')
+strong2form['Hm'].add('from')
+#strong2form['Hs'].add('') short asher
 
-def check_upos(h, e):
-    if h == '_' or e == '_':
-        return False
-    if h == 'DET':
-        if e in ['NOUN', 'VERB', 'AUX', 'ADP', 'ADV']:
-            return False
-    if h == 'PROPN':
-        return (e in ['NOUN', 'PROPN'])
-    if h == 'CCONJ':
-        return (e == 'CCONJ')
-    if e == 'CCONJ':
-        return (h == 'CCONJ')
-    if e == 'DET':
-        if h in ['NOUN', 'VERB', 'AUX', 'ADP', 'ADV']:
-            return False
-    return True
-
-
-pairs = set()
+pairs = collections.defaultdict(collections.Counter)
 pos_pairs = collections.Counter()
 for strong in strong2form:
     for hbo in strong2hbo[strong]:
         for form in strong2form[strong]:
             for eng in form2tags[form]:
-                if check_upos(hbo[1], eng[1]):
-                    pairs.add((hbo, eng))
+                if utils.check_upos(hbo[1], eng[1]):
+                    pairs[hbo][eng] = form_freq[form]
                     pos_pairs[(hbo[1], eng[1])] += 1
 #for p in pos_pairs.most_common():
 #    print(p)
 
-root = ET.Element('dictionary')
-ET.SubElement(root, 'alphabet')
-sdefs = ET.SubElement(root, 'sdefs')
-section = ET.SubElement(root, 'section', id='main', type='standard')
-tags = set()
-for lt, rt in sorted(pairs):
-    e = ET.SubElement(section, 'e')
-    e.tail = '\n    '
-    p = ET.SubElement(e, 'p')
-    l = ET.SubElement(p, 'l')
-    l.text = lt[0]
-    for t in lt[1:]:
-        if t is None: continue
-        tags.add(t)
-        ET.SubElement(l, 's', n=t)
-    r = ET.SubElement(p, 'r')
-    r.text = rt[0]
-    for t in rt[1:]:
-        if t is None: continue
-        tags.add(t)
-        ET.SubElement(r, 's', n=t)
-#print(tags)
-for t in sorted(tags):
-    ET.SubElement(sdefs, 'sdef', n=t)
-ET.indent(sdefs, level=1)
-with open(f'generated/hbo-eng/{args.version}.dix', 'wb') as fout:
-    tree = ET.ElementTree(root)
-    tree.write(fout, encoding='utf-8', xml_declaration=True)
+utils.write_dictionary(pairs, f'generated/hbo-eng/{args.version}.dix')

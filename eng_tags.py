@@ -102,4 +102,4 @@ if __name__ == '__main__':
             t = '><'.join(t)
         return '<'+t+'>'
     for line in sys.stdin:
-        sys.stdout.write(re.sub(r'<(\w+)>', repl, line.strip()) + '\0\n')
+        sys.stdout.write(re.sub(r'<(\w+)>', repl, line.strip()) + '\n')

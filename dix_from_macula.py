@@ -1,6 +1,7 @@
 from collections import Counter, defaultdict
 import glob
 import unicodedata
+import utils
 from xml.etree import ElementTree as ET
 
 GRC_SPEC = {
@@ -65,6 +66,8 @@ def get_feats(spec, upos, feats, misc):
         ret += [f for f in misc if f.startswith(fn+'=')]
     return ret
 
+grc_tag_freq = Counter()
+
 grc_good = 0
 grc_bad = 0
 grc_bad_forms = set()
@@ -76,30 +79,14 @@ for fname in glob.glob('/home/daniel/UD_Ancient_Greek-PTNK/*.conllu'):
             grc_bad_forms.add(form)
             continue
         grc_good += 1
-        data = [lem, upos] + get_feats(GRC_SPEC, upos, feats, misc)
+        data = tuple([lem, upos] + get_feats(GRC_SPEC, upos, feats, misc))
         for s in form2strong[form]:
-            strong2tags[s].add(tuple(data))
+            strong2tags[s].add(data)
         for s in form2sdbh[form]:
-            sdbh2tags[s].add(tuple(data))
+            sdbh2tags[s].add(data)
+        grc_tag_freq[data] += 1
 
-pairs = set()
-
-def check_upos(h, g):
-    if h == '_' or g == '_':
-        return False
-    if h == 'DET':
-        if g in ['NOUN', 'VERB', 'AUX', 'ADP', 'ADV']:
-            return False
-    if h == 'PROPN':
-        return (g in ['NOUN', 'PROPN'])
-    if h == 'CCONJ':
-        return (g == 'CCONJ')
-    if g == 'CCONJ':
-        return (h == 'CCONJ')
-    if g == 'DET':
-        if h in ['NOUN', 'VERB', 'AUX', 'ADP', 'ADV']:
-            return False
-    return True
+entries = defaultdict(Counter)
 
 for fname in glob.glob('/home/daniel/hbo-UD/UD_Ancient_Hebrew-PTNK/*.conllu'):
     for form, lem, upos, feats, misc in iter_words(fname):
@@ -107,33 +94,7 @@ for fname in glob.glob('/home/daniel/hbo-UD/UD_Ancient_Hebrew-PTNK/*.conllu'):
         data = [lem, upos] + get_feats(HBO_SPEC, upos, feats, misc)
         for s in ls:
             for tg in strong2tags[s]:
-                if check_upos(data[1], tg[1]):
-                    pairs.add((tuple(data), tg))
+                if utils.check_upos(data[1], tg[1]):
+                    entries[tuple(data)][tg] = grc_tag_freq[tg]
 
-root = ET.Element('dictionary')
-ET.SubElement(root, 'alphabet')
-sdefs = ET.SubElement(root, 'sdefs')
-section = ET.SubElement(root, 'section', id='main', type='standard')
-tags = set()
-for lt, rt in sorted(pairs):
-    e = ET.SubElement(section, 'e')
-    e.tail = '\n    '
-    p = ET.SubElement(e, 'p')
-    l = ET.SubElement(p, 'l')
-    l.text = lt[0]
-    for t in lt[1:]:
-        if t is None: continue
-        tags.add(t)
-        ET.SubElement(l, 's', n=t)
-    r = ET.SubElement(p, 'r')
-    r.text = rt[0]
-    for t in rt[1:]:
-        if t is None: continue
-        tags.add(t)
-        ET.SubElement(r, 's', n=t)
-for t in sorted(tags):
-    ET.SubElement(sdefs, 'sdef', n=t)
-ET.indent(sdefs, level=1)
-with open('generated/hbo-grc/macula.dix', 'wb') as fout:
-    tree = ET.ElementTree(root)
-    tree.write(fout, encoding='utf-8', xml_declaration=True)
+utils.write_dictionary(entries, 'generated/hbo-grc/macula.dix')

@@ -3,7 +3,7 @@
 version=$1
 
 make_eng() {
-    python3 usfm2txt.py $version $1 2>generated/hbo-eng/eng.$version.$1.skip.json | apertium -f line -d /home/daniel/apertium/apertium-data/apertium-eng eng-tagger-case | sed 's/ _ / /g' | sed 's/\(*[A-Za-z]\+\)/\1<UNK>/g' | vislcg3 -g segment_eng.cg3 --in-apertium --out-binary -O generated/hbo-eng/eng.$version.$1.bin
+    python3 usfm2txt.py $version $1 2>generated/hbo-eng/eng.$version.$1.skip.json | apertium -f line -d /home/daniel/apertium/apertium-data/apertium-eng eng-tagger-case | sed 's/ _ / /g' | python3 eng_tags.py | sed 's/\(*[A-Za-z]\+\)/\1<UNK>/g' | vislcg3 -g segment_eng.cg3 --in-apertium --out-binary -O generated/hbo-eng/eng.$version.$1.bin
 }
 
 make_hbo() {
