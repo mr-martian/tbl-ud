@@ -15,6 +15,8 @@ class Rule:
     # R = child on right
     # S = siblings in listed order
     # MR = shift right one space
+    # F = front (place child before first aunt)
+    # B = back (place child after last aunt)
 
     def to_string(self):
         l = '|'.join(sorted(self.ltags)) or '_'
@@ -52,7 +54,9 @@ class WindowLinearizer:
         self.relations = defaultdict(set)
         self.weights = {}
         self.extra_rules = extra_rules or []
-        self.heads = {}
+        self.heads = {0: 0}
+        self.fronting = defaultdict(Counter)
+        self.backing = defaultdict(Counter)
         for cohort in window.cohorts:
             self.process_cohort(cohort)
         for head in self.layers:
@@ -101,8 +105,12 @@ class WindowLinearizer:
                     if wi == head:
                         if rl.mode == 'L':
                             weights[j][i] += rl.weight
-                        else:
+                        elif rl.mode == 'R':
                             weights[i][j] += rl.weight
+                        elif rl.mode == 'B':
+                            self.backing[self.heads[wi]][wj] += rl.weight
+                        elif rl.mode == 'F':
+                            self.fronting[self.heads[wi]][wj] += rl.weight
                     elif rl.mode == 'S':
                         weights[i][j] += rl.weight
         self.weights[head] = weights
@@ -142,11 +150,21 @@ class WindowLinearizer:
         self.linearized[head] = [layer[n] for n in best_row]
 
     def extract(self, head):
+        for n, w in self.fronting[head].most_common():
+            if w > 0:
+                yield from self.extract(n)
         for i in self.linearized[head]:
             if i == head:
                 yield i
+            elif self.fronting[self.heads[head]][i] > 0:
+                continue
+            elif self.backing[self.heads[head]][i] > 0:
+                continue
             else:
                 yield from self.extract(i)
+        for n, w in reversed(self.backing[head].most_common()):
+            if w > 0:
+                yield from self.extract(n)
 
     def apply_shifts(self, sequence, extra_shifts=None):
         for sh in (self.shifts + (extra_shifts or [])):
@@ -226,7 +244,11 @@ def linearize_file(fname):
             wl = WindowLinearizer(window)
             seq = wl.sequence
             rd = wl.readings
-            print('\n'.join(str(n) + ' '.join(rd[n]) for n in seq))
+            for i, n in enumerate(seq, 1):
+                h = wl.heads[n]
+                if h != 0:
+                    h = seq.index(h) + 1
+                print(' '.join(rd[n]), f'{i}->{h}', f'ID:{n}')
             # TODO: how best to output?
             break # @TEST TODO
 
