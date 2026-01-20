@@ -248,9 +248,8 @@ def linearize_file(fname):
                 h = wl.heads[n]
                 if h != 0:
                     h = seq.index(h) + 1
-                print(' '.join(rd[n]), f'{i}->{h}', f'ID:{n}')
-            # TODO: how best to output?
-            break # @TEST TODO
+                print('"<surf>"\n\t' + ' '.join(rd[n]), f'#{i}->{h}')
+            print()
 
 if __name__ == '__main__':
     import argparse
