@@ -346,30 +346,75 @@ class BaseSentence:
             else:
                 pass # TODO: shift rules
 
-def generate_rule(corpus, count=100):
-    rule_freq = Counter()
-    rules = {}
-    for sent in corpus:
-        for rule in sent.gen_rules():
-            rs = rule.to_string()
-            rule_freq[rs] += 1
-            if rs not in rules:
-                rules[rs] = rule
-    print('starting score', sum(s.base_score for s in corpus))
-    results = []
-    for rs, _ in rule_freq.most_common(count):
-        rule = rules[rs]
-        diff = 0
-        for sent in corpus:
-            if rule.ltags < sent.tagset and rule.rtags < sent.tagset:
-                diff += sent.score(rule) - sent.base_score
-        #print(diff, rs)
-        if diff < 0:
-            results.append((diff, rule))
-    if results:
-        results.sort(key=lambda x: (x[0], x[1].to_string()))
-        print('SELECT', results[0][0], results[0][1])
-        return results[0][1]
+@dataclass
+class BaseTrainer:
+    corpus: list = field(default_factory=list)
+    iterations: int = 10
+    count: int = 100
+
+    def load_corpus(self, source, target):
+        raise NotImplementedError
+
+    def generate_rule(self):
+        rule_freq = Counter()
+        rules = {}
+        for sent in self.corpus:
+            for rule in sent.gen_rules():
+                rs = rule.to_string()
+                rule_freq[rs] += 1
+                if rs not in rules:
+                    rules[rs] = rule
+        print('starting score', sum(s.base_score for s in corpus))
+        results = []
+        for rs, _ in rule_freq.most_common(count):
+            rule = rules[rs]
+            diff = 0
+            for sent in self.corpus:
+                if rule.ltags < sent.tagset and rule.rtags < sent.tagset:
+                    diff += sent.score(rule) - sent.base_score
+            #print(diff, rs)
+            if diff < 0:
+                results.append((diff, rule))
+        if results:
+            results.sort(key=lambda x: (x[0], x[1].to_string()))
+            print('SELECT', results[0][0], results[0][1])
+            return results[0][1]
+
+    def training_loop(self, fout):
+        global ALL_RULES
+        for i in range(self.iterations):
+            print(i)
+            rule = self.generate_rule()
+            if rule is None:
+                break
+            fout.write(rule.to_string(), '\n')
+            for sent in self.corpus:
+                sent.wl.add_rule(rule, len(ALL_RULES))
+            ALL_RULES.append(rule)
+
+    def cli(self):
+        import argparse
+        parser = argparse.ArgumentParser()
+        parser.add_argument('source')
+        parser.add_argument('target')
+        parser.add_argument('output_rules')
+        parser.add_argument('--initial_rules', action='store')
+        parser.add_argument('--iterations', type=int, default=10)
+        parser.add_argument('--count', type=int, default=100)
+        args = parser.parse_args()
+        self.iterations = args.iterations
+        self.count = args.count
+
+        with open(args.output_rules, 'w') as fout:
+
+            if args.initial_rules:
+                parse_rule_file(args.initial_rules)
+                with open(args.initial_rules) as fin:
+                    fout.write(fin.read() + '\n')
+
+            self.load_corpus(args.source, args.target)
+
+            self.training_loop(fout)
 
 if __name__ == '__main__':
     import argparse

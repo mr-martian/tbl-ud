@@ -93,43 +93,19 @@ class Sentence(BaseSentence):
         # is a unambiguously before b in the target data?
         return self.alignments[a][-1] < self.alignments[b][0]
 
-def load_corpus(src, tgt):
-    with open(src, 'rb') as fin:
-        source = list(parse_binary_stream(fin, windows_only=True))
+@dataclass
+class Trainer(BaseTrainer):
+    def load_corpus(self, src, tgt):
+        with open(src, 'rb') as fin:
+            source = list(parse_binary_stream(fin, windows_only=True))
 
-    #with open(tgt) as fin:
-    #    target = [parse_apertium(block) for block in fin.read().split('\n\n')]
-    with open(tgt) as fin:
-        target = [parse_conllu(block) for block in fin.read().split('\n\n')]
+        with open(tgt) as fin:
+            target = [parse_conllu(block)
+                      for block in fin.read().split('\n\n')]
 
-    return [Sentence.from_input(s, t) for s, t in zip(source, target)]
+        self.corpus = [Sentence.from_input(s, t)
+                       for s, t in zip(source, target)]
 
 if __name__ == '__main__':
-    import argparse
-    parser = argparse.ArgumentParser()
-    parser.add_argument('source')
-    parser.add_argument('target')
-    parser.add_argument('output_rules')
-    parser.add_argument('--initial_rules', action='store')
-    parser.add_argument('--iterations', type=int, default=10)
-    parser.add_argument('--count', type=int, default=100)
-    args = parser.parse_args()
-
-    with open(args.output_rules, 'w') as fout:
-
-        if args.initial_rules:
-            parse_rule_file(args.initial_rules)
-            with open(args.initial_rules) as fin:
-                fout.write(fin.read() + '\n')
-
-        corpus = load_corpus(args.source, args.target)
-
-        for i in range(args.iterations):
-            print(i)
-            rule = generate_rule(corpus, args.count)
-            if rule is None:
-                break
-            fout.write(rule.to_string() + '\n')
-            for sent in corpus:
-                sent.wl.add_rule(rule, len(ALL_RULES))
-            ALL_RULES.append(rule)
+    t = Trainer()
+    t.cli()
