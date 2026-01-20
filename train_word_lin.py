@@ -49,19 +49,14 @@ def parse_conllu(block):
 
 
 @dataclass
-class Sentence:
-    source: Window = None
+class Sentence(BaseSentence):
     source_words: dict = field(default_factory=dict)
-    target: list = field(default_factory=list)
-    tagset: set = field(default_factory=set)
     alignments: dict = field(default_factory=dict)
-    heads: dict = field(default_factory=dict)
-    base_score: int = None
-    wl: WindowLinearizer = None
 
     @staticmethod
     def from_input(src, tgt):
         ret = Sentence(source=src, target=tgt)
+        ret.heads[0] = 0
         ttags = defaultdict(list)
         all_ttags = []
         for i, w in enumerate(tgt):
@@ -91,47 +86,12 @@ class Sentence:
         ret.wl = WindowLinearizer(ret.source)
         return ret
 
-    def score(self, rule):
-        seq = self.wl.add_rule(rule)
-        score = 0
-        # TODO: is this the best metric?
-        for idx, i in enumerate(seq):
-            for j in seq[idx:]:
-                # if they're obviously wrong
-                if self.alignments[j][-1] < self.alignments[i][0]:
-                    score += 1
-        return score
-
     def describe_word(self, wid):
         yield from self.source_words[wid].describe()
 
-    def expand_rule(self, left, right, mode, weight):
-        for ltags in self.describe_word(left):
-            for rtags in self.describe_word(right):
-                yield Rule(ltags=ltags, rtags=rtags, weight=weight,
-                           mode=mode)
-
-    def weight(self, head, i, j):
-        return max(self.wl.get_weight_difference(head, i, j) + 1, 1)
-
-    def gen_rules(self):
-        self.base_score = 0
-        for idx, i in enumerate(self.wl.sequence):
-            for j in self.wl.sequence[idx:]:
-                if self.alignments[j][-1] < self.alignments[i][0]:
-                    self.base_score += 1
-                    if self.heads[i] == j:
-                        yield from self.expand_rule(
-                            j, i, 'R', self.weight(j, i, j))
-                    elif self.heads[j] == i:
-                        yield from self.expand_rule(
-                            i, j, 'L', self.weight(i, i, j))
-                    elif self.heads[i] == self.heads[j]:
-                        h = self.heads[i]
-                        yield from self.expand_rule(
-                            j, i, 'S', self.weight(h, i, j))
-                    else:
-                        pass # TODO: shift rules
+    def before(self, a, b):
+        # is a unambiguously before b in the target data?
+        return self.alignments[a][-1] < self.alignments[b][0]
 
 def load_corpus(src, tgt):
     with open(src, 'rb') as fin:
@@ -143,31 +103,6 @@ def load_corpus(src, tgt):
         target = [parse_conllu(block) for block in fin.read().split('\n\n')]
 
     return [Sentence.from_input(s, t) for s, t in zip(source, target)]
-
-def generate_rule(corpus, count=100):
-    rule_freq = Counter()
-    rules = {}
-    for sent in corpus:
-        for rule in sent.gen_rules():
-            rs = rule.to_string()
-            rule_freq[rs] += 1
-            if rs not in rules:
-                rules[rs] = rule
-    print('starting score', sum(s.base_score for s in corpus))
-    results = []
-    for rs, _ in rule_freq.most_common(count):
-        rule = rules[rs]
-        diff = 0
-        for sent in corpus:
-            if rule.ltags < sent.tagset and rule.rtags < sent.tagset:
-                diff += sent.score(rule) - sent.base_score
-        #print(diff, rs)
-        if diff < 0:
-            results.append((diff, rule))
-    if results:
-        results.sort(key=lambda x: (x[0], x[1].to_string()))
-        print('SELECT', results[0][0], results[0][1])
-        return results[0][1]
 
 if __name__ == '__main__':
     import argparse

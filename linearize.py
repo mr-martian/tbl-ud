@@ -1,4 +1,4 @@
-from cg3 import parse_binary_stream
+from cg3 import parse_binary_stream, Window
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 import itertools
@@ -57,6 +57,8 @@ class WindowLinearizer:
         self.heads = {0: 0}
         self.fronting = defaultdict(Counter)
         self.backing = defaultdict(Counter)
+        self.extra_fronting = defaultdict(Counter)
+        self.extra_backing = defaultdict(Counter)
         for cohort in window.cohorts:
             self.process_cohort(cohort)
         for head in self.layers:
@@ -149,22 +151,29 @@ class WindowLinearizer:
 
         self.linearized[head] = [layer[n] for n in best_row]
 
+    def is_moved(self, i):
+        gp = self.heads[self.heads[i]]
+        fw = self.fronting[gp][i] + self.extra_fronting[gp][i]
+        bw = self.backing[gp][i] + self.extra_backing[gp][i]
+        return ((fw - max(bw, 0)) > 0 or (bw - max(fw, 0)) > 0)
+
     def extract(self, head):
-        for n, w in self.fronting[head].most_common():
-            if w > 0:
-                yield from self.extract(n)
+        front_plain = self.fronting[head] + self.extra_fronting[head]
+        back_plain = self.backing[head] + self.extra_backing[head]
+        # double + because negative backing != fronting
+        front = +(front_plain - (+back_plain))
+        back = +(back_plain - (+front_plain))
+        for n, w in front.most_common():
+            yield from self.extract(n)
         for i in self.linearized[head]:
             if i == head:
                 yield i
-            elif self.fronting[self.heads[head]][i] > 0:
-                continue
-            elif self.backing[self.heads[head]][i] > 0:
+            elif self.is_moved(i):
                 continue
             else:
                 yield from self.extract(i)
-        for n, w in reversed(self.backing[head].most_common()):
-            if w > 0:
-                yield from self.extract(n)
+        for n, w in reversed(back.most_common()):
+            yield from self.extract(n)
 
     def apply_shifts(self, sequence, extra_shifts=None):
         for sh in (self.shifts + (extra_shifts or [])):
@@ -217,6 +226,21 @@ class WindowLinearizer:
                             if l == r:
                                 continue
                             set_weight(head, l, r)
+                elif head in left and rule.mode in ['F', 'B']:
+                    for r in layer:
+                        if r == head or r not in right:
+                            continue
+                        gp = self.heads[head]
+                        if index is None:
+                            if rule.mode == 'F':
+                                self.extra_fronting[gp][r] += rule.weight
+                            else:
+                                self.extra_backing[gp][r] += rule.weight
+                        else:
+                            if rule.mode == 'F':
+                                self.fronting[gp][r] += rule.weight
+                            else:
+                                self.backing[gp][r] += rule.weight
         orig_lin = {}
         for head in update:
             orig_lin[head] = self.linearized[head][:]
@@ -228,6 +252,8 @@ class WindowLinearizer:
 
         if index is None:
             self.linearized.update(orig_lin)
+            self.extra_fronting.clear()
+            self.extra_backing.clear()
         else:
             self.sequence = seq
             self.shifts += extra_shifts
@@ -250,6 +276,100 @@ def linearize_file(fname):
                     h = seq.index(h) + 1
                 print('"<surf>"\n\t' + ' '.join(rd[n]), f'#{i}->{h}')
             print()
+
+@dataclass
+class BaseSentence:
+    source: Window = None
+    target: list = field(default_factory=list)
+    tagset: set = field(default_factory=set)
+    heads: dict = field(default_factory=dict)
+    base_score: int = 0
+    wl: WindowLinearizer = None
+
+    @staticmethod
+    def from_input(src, tgt):
+        raise NotImplementedError
+
+    def before(self, a, b):
+        # return True if a is unambiguously before b in the correct order
+        raise NotImplementedError
+
+    def describe_word(self, wid):
+        raise NotImplementedError
+
+    def wrong_pairs(self, seq=None):
+        s = seq or self.wl.sequence
+        for idx, i in enumerate(s):
+            for j in s[idx:]:
+                if self.before(j, i):
+                    yield i, j
+
+    def score(self, rule):
+        seq = self.wl.add_rule(rule)
+        return len(list(self.wrong_pairs(seq)))
+
+    def weight(self, head, i, j):
+        return max(self.wl.get_weight_difference(head, i, j) + 1, 1)
+
+    def expand_rule(self, left, right, mode, weight):
+        for ltags in self.describe_word(left):
+            for rtags in self.describe_word(right):
+                yield Rule(ltags=ltags, rtags=rtags, weight=weight,
+                           mode=mode)
+
+    def gen_rules(self):
+        self.base_score = 0
+        for i, j in self.wrong_pairs():
+            self.base_score += 1
+            if self.heads[i] == j:
+                yield from self.expand_rule(j, i, 'R', self.weight(j, i, j))
+            elif self.heads[j] == i:
+                yield from self.expand_rule(i, j, 'L', self.weight(i, i, j))
+            elif self.heads[i] == self.heads[j]:
+                h = self.heads[i]
+                yield from self.expand_rule(j, i, 'S', self.weight(h, i, j))
+            elif (self.heads[i] == self.heads[self.heads[j]] and
+                  self.before(i, self.heads[j]) and
+                  all(self.before(i, x) or self.heads[i] != self.heads[x]
+                      for x in self.wl.sequence)):
+                w = 1 - self.wl.fronting[self.heads[i]][j]
+                w += max(self.wl.backing[self.heads[i]][j], 0)
+                yield from self.expand_rule(self.heads[j], j, 'F', w)
+            elif (self.heads[j] == self.heads[self.heads[i]] and
+                  self.before(self.heads[i], j) and
+                  all(self.before(x, i) or self.heads[i] != self.heads[x]
+                      for x in self.wl.sequence)):
+                w = 1 - self.wl.backing[self.heads[j]][i]
+                w += max(self.wl.fronting[self.heads[j]][i], 0)
+                yield from self.expand_rule(self.heads[i], i, 'F', w)
+            # TODO: un-front, un-back
+            else:
+                pass # TODO: shift rules
+
+def generate_rule(corpus, count=100):
+    rule_freq = Counter()
+    rules = {}
+    for sent in corpus:
+        for rule in sent.gen_rules():
+            rs = rule.to_string()
+            rule_freq[rs] += 1
+            if rs not in rules:
+                rules[rs] = rule
+    print('starting score', sum(s.base_score for s in corpus))
+    results = []
+    for rs, _ in rule_freq.most_common(count):
+        rule = rules[rs]
+        diff = 0
+        for sent in corpus:
+            if rule.ltags < sent.tagset and rule.rtags < sent.tagset:
+                diff += sent.score(rule) - sent.base_score
+        #print(diff, rs)
+        if diff < 0:
+            results.append((diff, rule))
+    if results:
+        results.sort(key=lambda x: (x[0], x[1].to_string()))
+        print('SELECT', results[0][0], results[0][1])
+        return results[0][1]
 
 if __name__ == '__main__':
     import argparse
