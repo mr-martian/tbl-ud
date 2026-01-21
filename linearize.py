@@ -27,7 +27,7 @@ def parse_rule(linenumber, line):
     global ALL_RULES
     ls = line.strip().split('\t')
     if len(ls) != 4:
-        raise ValueError(f'{linenumber} does not have 4 columns')
+        raise ValueError(f'Line {linenumber} does not have 4 columns')
     r = Rule()
     r.mode = ls[0]
     if ls[1] != '_':
@@ -264,17 +264,31 @@ class WindowLinearizer:
         r = self.layers[head].index(right)
         return self.weights[head][l][r] - self.weights[head][r][l]
 
-def linearize_file(fname):
+def linearize_file(fname, format='cg'):
     with open(fname, 'rb') as fin:
-        for window in parse_binary_stream(fin, windows_only=True):
+        for idx, window in enumerate(parse_binary_stream(
+                fin, windows_only=True)):
             wl = WindowLinearizer(window)
             seq = wl.sequence
             rd = wl.readings
+            if format == 'conllu':
+                print('# sent_id = s%d' % idx)
             for i, n in enumerate(seq, 1):
                 h = wl.heads[n]
                 if h != 0:
                     h = seq.index(h) + 1
-                print('"<surf>"\n\t' + ' '.join(rd[n]), f'#{i}->{h}')
+                if format == 'cg':
+                    print('"<surf>"\n\t' + ' '.join(rd[n]), f'#{i}->{h}')
+                else:
+                    tags = rd[n]
+                    feats = [t for t in tags if '=' in t]
+                    rels = [t for t in tags if t[0] == '@']
+                    rel = '_'
+                    if rels:
+                        rel = rels[0][1:]
+                    print(i, '_', tags[0][1:-1], tags[1], '_',
+                          ('|'.join(feats) or '_'), h, rel, '_', '_',
+                          sep='\t')
             print()
 
 @dataclass
@@ -313,6 +327,9 @@ class BaseSentence:
 
     def expand_rule(self, left, right, mode, weight):
         for ltags in self.describe_word(left):
+            if mode == 'MR':
+                yield Rule(ltags=ltags, mode=mode)
+                continue
             for rtags in self.describe_word(right):
                 yield Rule(ltags=ltags, rtags=rtags, weight=weight,
                            mode=mode)
@@ -343,8 +360,12 @@ class BaseSentence:
                 w += max(self.wl.fronting[self.heads[j]][i], 0)
                 yield from self.expand_rule(self.heads[i], i, 'F', w)
             # TODO: un-front, un-back
+            elif (self.wl.sequence.index(i) + 1 == self.wl.sequence.index(j)
+                  and not any(self.before(j, x) and self.before(x, i)
+                              for x in self.wl.sequence)):
+                yield from self.expand_rule(i, None, 'MR', 0)
             else:
-                pass # TODO: shift rules
+                pass # no pattern, see if changes elsewhere fix it
 
 @dataclass
 class BaseTrainer:
@@ -364,9 +385,9 @@ class BaseTrainer:
                 rule_freq[rs] += 1
                 if rs not in rules:
                     rules[rs] = rule
-        print('starting score', sum(s.base_score for s in corpus))
+        print('starting score', sum(s.base_score for s in self.corpus))
         results = []
-        for rs, _ in rule_freq.most_common(count):
+        for rs, _ in rule_freq.most_common(self.count):
             rule = rules[rs]
             diff = 0
             for sent in self.corpus:
@@ -387,7 +408,7 @@ class BaseTrainer:
             rule = self.generate_rule()
             if rule is None:
                 break
-            fout.write(rule.to_string(), '\n')
+            fout.write(rule.to_string() + '\n')
             for sent in self.corpus:
                 sent.wl.add_rule(rule, len(ALL_RULES))
             ALL_RULES.append(rule)
@@ -421,7 +442,8 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('rules')
     parser.add_argument('input')
+    parser.add_argument('--format', choices=['cg', 'conllu'], default='cg')
     args = parser.parse_args()
 
     parse_rule_file(args.rules)
-    linearize_file(args.input)
+    linearize_file(args.input, format=args.format)

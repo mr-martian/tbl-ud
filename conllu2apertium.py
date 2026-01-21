@@ -20,6 +20,9 @@ def order(upos):
 
 all_feats = set()
 
+def escape(w):
+    return w.replace('/', '\\/').replace('<', '\\<')
+
 for idx, sent in enumerate(utils.conllu_sentences(sys.stdin), 1):
     line = []
     for word in utils.conllu_words(sent):
@@ -27,8 +30,8 @@ for idx, sent in enumerate(utils.conllu_sentences(sys.stdin), 1):
         misc = utils.conllu_feature_dict(word[9], with_prefix=True)
         w = '^'
         if args.surface:
-            w += word[1]+'/'
-        w += word[2]+'<'+word[3]+'>'
+            w += escape(word[1])+'/'
+        w += escape(word[2])+'<'+word[3]+'>'
         seq = list(order(word[3]))
         for key in seq:
             v = feats.get(key) or misc.get(key)

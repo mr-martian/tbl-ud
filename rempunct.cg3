@@ -1,3 +1,3 @@
 DELIMITERS = "<$$$>" ;
-REMCOHORT (SOURCE PUNCT) ;
-MERGECOHORTS ("<$1$5>"v "$2$6"v SOURCE VSTR:$3 VSTR:$4 "@null" X VSTR:$4) ("<\(.+\)>"r "\([^<>]+\)"r SOURCE /^ExtPos=\(.+\)$/r /^\(@.+\)$/r) WITH (c ("<\(.+\)>"r "\([^<>]+\)"r SOURCE @fixed)) ;
+REMCOHORT REPEAT (SOURCE PUNCT) ;
+MERGECOHORTS REPEAT ("<$1$5>"v "$2$6"v SOURCE VSTR:$3 VSTR:$4 "@null" X VSTR:$4) ("<\(.+\)>"r "\([^<>]+\)"r SOURCE /^ExtPos=\(.+\)$/r /^\(@.+\)$/r) WITH (c ("<\(.+\)>"r "\([^<>]+\)"r SOURCE @fixed)) ;
