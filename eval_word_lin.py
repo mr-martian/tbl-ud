@@ -12,9 +12,7 @@ parser.add_argument('dev_tgt', help='conllu')
 parser.add_argument('graph')
 args = parser.parse_args()
 
-twl.parse_rule_file(args.rule_file)
-orig_rules = twl.ALL_RULES[:]
-twl.ALL_RULES = []
+orig_rules = twl.parse_rule_file(args.rule_file, to_global=False)
 
 train = twl.Trainer()
 train.load_corpus(args.train_src, args.train_tgt)

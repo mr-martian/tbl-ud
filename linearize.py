@@ -24,7 +24,6 @@ class Rule:
         return f'{self.mode}\t{l}\t{r}\t{self.weight}'
 
 def parse_rule(linenumber, line):
-    global ALL_RULES
     ls = line.strip().split('\t')
     if len(ls) != 4:
         raise ValueError(f'Line {linenumber} does not have 4 columns')
@@ -35,13 +34,18 @@ def parse_rule(linenumber, line):
     if ls[2] != '_':
         r.rtags = set(ls[2].split('|'))
     r.weight = float(ls[3])
-    ALL_RULES.append(r)
+    return r
 
-def parse_rule_file(fname):
+def parse_rule_file(fname, to_global=True):
+    ret = []
     with open(fname) as fin:
         for i, line in enumerate(fin, 1):
             if line.strip():
-                parse_rule(i, line)
+                ret.append(parse_rule(i, line))
+    if to_global:
+        global ALL_RULES
+        ALL_RULES += ret
+    return ret
 
 class WindowLinearizer:
     def __init__(self, window, extra_rules=None):
