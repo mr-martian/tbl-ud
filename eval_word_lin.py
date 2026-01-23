@@ -48,6 +48,8 @@ def eval_both(idx):
     train_log.append(t)
     dev_log.append(d)
     print('%5d: Train Loss %3.2f Micro-WER %3.2f Macro-WER %3.2f Test Loss %3.2f Micro-WER %3.2f Macro-WER %3.2f' % (idx, *t, *d))
+    if idx == len(orig_rules):
+        print('& %d & %.2f\\%% & %.2f\\%% & %.2f\\%% \\\\' % (idx, *d))
 
 for rule_idx in range(len(orig_rules)):
     eval_both(rule_idx)

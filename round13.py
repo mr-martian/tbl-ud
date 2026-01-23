@@ -4,11 +4,9 @@ from metrics import PER
 import argparse
 from collections import Counter, defaultdict
 import io
-from itertools import combinations
 import json
 import os
 import resource
-import sqlite3
 import struct
 import subprocess
 import sys
@@ -215,22 +213,20 @@ def gen_rules(window, slw, tlw):
         source_desc.append(source_lex(cohort))
         lexical_desc.append(source_desc[-1] or desc_c(cohort))
         rels.append(get_rel(cohort))
-    def lexical_context(cohort):
+    def neighbors(cohort):
         for i, c in enumerate(slw.cohorts):
             if c.dep_self == cohort.dep_parent:
-                yield f'p ({lexical_desc[i]})'
+                yield i, c, 'p'
             elif c.dep_parent == cohort.dep_self:
-                yield f'c ({lexical_desc[i]})'
+                yield i, c, 'c'
             elif c.dep_parent == cohort.dep_parent and c.dep_self != cohort.dep_self:
-                yield f's ({lexical_desc[i]})'
+                yield i, c, 's'
+    def lexical_context(cohort):
+        for i, c, r in neighbors(cohort):
+            yield f'{r} ({lexical_desc[i]})'
     def context_with_feat(cohort, feat):
-        for i, c in enumerate(slw.cohorts):
-            rel = None
-            if c.dep_self == cohort.dep_parent:
-                rel = 'p'
-            elif c.dep_parent == cohort.dep_self:
-                rel = 'c'
-            else:
+        for i, c, rel in neighbors(cohort):
+            if rel == 's':
                 continue
             if any(feat in r.tags and 'SOURCE' not in r.tags
                    for r in c.readings):
@@ -279,6 +275,8 @@ def gen_rules(window, slw, tlw):
                         for lc in lctx: # TODO: ???
                             yield ('feat2func', lexical_desc[idx], lc,
                                    m, f'{k}={v}')
+                            yield ('feat2func', role_desc, lc, m,
+                                   f'{k}={v}')
                 for v2 in tf[k]:
                     if v != v2 and sf[k][v2] < tf[k][v2]:
                         feat = f'{k}={v2}'
@@ -292,6 +290,11 @@ def gen_rules(window, slw, tlw):
                             yield ('agreement', lexical_desc[idx],
                                    c, k, feat)
                             yield ('agreement', role_desc, c, k, feat)
+                        for i, c, r in neighbors(cohort):
+                            if r == 's':
+                                continue
+                            yield ('feat-from-func', role_desc,
+                                   f'{r} ({lexical_desc[i]})', k, feat)
             for k in tf:
                 if k in rf:
                     continue
