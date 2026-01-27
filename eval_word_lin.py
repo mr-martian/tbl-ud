@@ -1,7 +1,6 @@
 import argparse
 import matplotlib.pyplot as plt
 from nltk.metrics import edit_distance
-import train_word_lin as twl
 
 parser = argparse.ArgumentParser()
 parser.add_argument('rule_file')
@@ -9,8 +8,14 @@ parser.add_argument('train_src', help='bin')
 parser.add_argument('train_tgt', help='conllu')
 parser.add_argument('dev_src', help='bin')
 parser.add_argument('dev_tgt', help='conllu')
+parser.add_argument('--tree', action='store_true')
 parser.add_argument('graph')
 args = parser.parse_args()
+
+if args.tree:
+    import train_tree_lin as twl
+else:
+    import train_word_lin as twl
 
 orig_rules = twl.parse_rule_file(args.rule_file, to_global=False)
 
@@ -18,6 +23,15 @@ train = twl.Trainer()
 train.load_corpus(args.train_src, args.train_tgt)
 dev = twl.Trainer()
 dev.load_corpus(args.dev_src, args.dev_tgt)
+
+def lemma(sent, n):
+    if args.tree:
+        cohort = sent.source.cohorts[sent.idmap[n]]
+        for r in cohort.readings:
+            if 'SOURCE' not in r.tags:
+                return r.lemma.strip('"')
+    else:
+        return sent.source_words[n].lemma
 
 def eval_corpus(corpus):
     max_loss = 0
@@ -29,7 +43,7 @@ def eval_corpus(corpus):
         cohorts = len(sent.source.cohorts)
         max_loss += (cohorts * (cohorts - 1)) / 2
         actual_loss += len(list(sent.wrong_pairs()))
-        sw = [sent.source_words[n].lemma for n in sent.wl.sequence]
+        sw = [lemma(sent, n) for n in sent.wl.sequence]
         tw = [w.lemma for w in sent.target]
         wer = edit_distance(sw, tw)
         total_wer += wer

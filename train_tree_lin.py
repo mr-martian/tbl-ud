@@ -26,7 +26,8 @@ def parse_conllu(block):
                           relation=cols[7]))
     return ret
 
-ENUMERATED_RELS = {'conj', 'parataxis', 'advcl', 'mark', 'cc'}
+#ENUMERATED_RELS = {'conj', 'parataxis', 'advcl', 'mark', 'cc'}
+ENUMERATED_RELS = set()
 
 def ud_get_paths(tree):
     base_rels = []
@@ -44,7 +45,9 @@ def ud_get_paths(tree):
         if n == 0:
             return ''
         if paths[n-1] is None:
-            paths[n-1] = tree[n-1].lemma + '@' + base_rels[n-1] + get_path(tree[n-1].head)
+            pfx = tree[n-1].lemma + '@' + base_rels[n-1]
+            base = get_path(tree[n-1].head)
+            paths[n-1] = pfx + base
         return paths[n-1]
     for w in tree:
         get_path(w.index)
@@ -74,23 +77,26 @@ def cg_get_paths(window):
             return ''
         n = locs[ds]
         if paths[n] is None:
-            paths[n] = lems[n] + base_rels[n] + get_path(window.cohorts[n].dep_parent)
+            pfx = lems[n] + base_rels[n]
+            base = get_path(window.cohorts[n].dep_parent)
+            paths[n] = pfx + base
         return paths[n]
     for c in window.cohorts:
         get_path(c.dep_self)
-    return {pth: i for i, (lm, pth) in enumerate(zip(lems, paths))}
+    ret = defaultdict(list)
+    for i, pth in enumerate(paths):
+        ret[pth].append(i)
+    return ret
 
 def align_tree(src, tgt):
     spth = cg_get_paths(src)
     tpth = ud_get_paths(tgt)
-    if len(spth) != len(tpth):
-        print(spth)
-        print(tpth)
-        c = Counter(tpth.values())
-        print(c.most_common(3))
-        raise ValueError()
+    ct = Counter()
     for w in tgt:
-        ch = src.cohorts[spth[tpth[w.index]]]
+        tp = tpth[w.index]
+        i = ct[tp]
+        ct[tp] += 1
+        ch = src.cohorts[spth[tp][i]]
         w.cgid = ch.dep_self
         w.headid = ch.dep_parent
 

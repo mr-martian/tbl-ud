@@ -22,4 +22,4 @@ with open(args.train) as fin:
 
 axs.legend()
 
-plt.savefig('blah.png')
+plt.savefig(args.train + '.png')
