@@ -17,12 +17,14 @@ def PER_readings(window, with_features, target_features=None):
             else:
                 yield frozenset([reading.lemma, reading.tags[0]])
             break
-def PER(source, target, target_features=None):
+def PER(source, target, target_features=None, skip_windows=None):
     swords = 0
     twords = 0
     lcorrect = 0
     fcorrect = 0
-    for sw, tw in zip(source, target):
+    for idx, (sw, tw) in enumerate(zip(source, target)):
+        if skip_windows and idx in skip_windows:
+            continue
         swords += len(sw.cohorts)
         twords += len(tw.cohorts)
         sl = Counter(PER_readings(sw, False))
@@ -43,14 +45,20 @@ if __name__ == '__main__':
     parser.add_argument('src')
     parser.add_argument('tgt')
     parser.add_argument('--target_feats', action='store')
+    parser.add_argument('--skip_windows', action='store')
     args = parser.parse_args()
     target_feats = None
     if args.target_feats:
         with open(args.target_feats) as fin:
             target_feats = set(json.loads(fin.read()))
+    skip_windows = None
+    if args.skip_windows:
+        with open(args.skip_windows) as fin:
+            skip_windows = set(json.loads(fin.read()))
     with (open(args.src, 'rb') as f1,
           open(args.tgt, 'rb') as f2):
         print('%s\t%s' % PER(
             list(parse_binary_stream(f1, windows_only=True)),
             list(parse_binary_stream(f2, windows_only=True)),
-            target_feats))
+            target_feats,
+            skip_windows))

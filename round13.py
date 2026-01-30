@@ -446,7 +446,7 @@ with (TemporaryDirectory() as tmpdir,
     def log_scores(iteration, src_path):
         global target, rule_output, EXCLUDE
         update_source(src_path)
-        base_per = PER(source, target, TARGET_FEATS)
+        base_per = PER(source, target, TARGET_FEATS, SKIP_WINDOWS)
         rule_output.write('####################\n')
         rule_output.write(f'## {iteration}: {base_score} PER_lem {base_per[0]:.2f}% PER_form {base_per[1]:.2f}%\n')
         rule_output.write('####################\n')
