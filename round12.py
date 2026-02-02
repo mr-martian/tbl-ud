@@ -1,4 +1,5 @@
 from cg3 import parse_binary_stream as parse_cg3
+import cg3_score
 from metrics import PER
 
 import argparse
@@ -102,17 +103,29 @@ def tags_to_feature_dict(tags, dct=None):
             dct[k][v] += 1
     return dct
 
-def collect_words_and_feats(window):
+def tags_to_flat_feature_dict(desc, tags, dct):
+    for t in tags:
+        if '=' in t:
+            k, v = t.split('=', 1)
+            if TARGET_FEATS is not None and k not in TARGET_FEATS:
+                continue
+            dct[(desc, t)] += 1
+
+def collect_words_and_feats(window, for_eval=True, for_gen=True):
     words = Counter()
     feats = defaultdict(lambda: defaultdict(Counter))
+    feats_flat = Counter()
     for c in window.cohorts:
         for r in c.readings:
             if 'SOURCE' in r.tags:
                 continue
             d = desc_r(r)
             words[d] += 1
-            tags_to_feature_dict(r.tags, feats[d])
-    return words, feats
+            if for_gen:
+                tags_to_feature_dict(r.tags, feats[d])
+            if for_eval:
+                tags_to_flat_feature_dict(d, r.tags, feats_flat)
+    return words, feats, feats_flat
 
 with open(args.target, 'rb') as fin:
     target = list(parse_cg3(fin, windows_only=True))
@@ -124,8 +137,8 @@ def gen_rules(window, slw, tlw):
     if window in SKIP_WINDOWS:
         return []
     rules = []
-    src_words, src_feats = collect_words_and_feats(slw)
-    tgt_words, tgt_feats = target_words_and_feats[window]
+    src_words, src_feats, _ = collect_words_and_feats(slw, for_eval=False)
+    tgt_words, tgt_feats, _ = target_words_and_feats[window]
     extra = +(src_words - tgt_words)
     missing = +(tgt_words - src_words)
     for idx, cohort in enumerate(slw.cohorts):
@@ -353,7 +366,8 @@ def run_windows(gpath, windows):
     proc = subprocess.run(['vislcg3', '--in-binary', '--out-binary',
                            '-g', gpath],
                           capture_output=True, check=True, input=inp)
-    yield from parse_cg3(io.BytesIO(proc.stdout), windows_only=True)
+    #yield from parse_cg3(io.BytesIO(proc.stdout), windows_only=True)
+    yield from cg3_score.iter_blocks(proc.stdout)
 
 def calc_intersection(rules: list, ipath, gpath: str, opath: str):
     if not rules:
@@ -391,22 +405,35 @@ def score_window(slw, tlw, index):
         return 0
     score = 0
     score += WEIGHTS['cohorts'] * abs(len(slw.cohorts) - len(tlw.cohorts))
-    src_words, src_feats = collect_words_and_feats(slw)
-    tgt_words, tgt_feats = target_words_and_feats[index]
-    extra = src_words - tgt_words
-    missing = tgt_words - src_words
-    score += WEIGHTS['missing'] * missing.total()
-    score += WEIGHTS['extra'] * extra.total()
+    src_words, _, src_feats = collect_words_and_feats(slw, for_gen=False)
+    tgt_words, _, tgt_feats = target_words_and_feats[index]
+    extra, missing = cg3_score.symmetric_difference(src_words, tgt_words)
+    score += WEIGHTS['missing'] * missing
+    score += WEIGHTS['extra'] * extra
     score += WEIGHTS['ambig'] * (src_words.total() - len(slw.cohorts))
     score += WEIGHTS['ins'] * len([s for s in slw.cohorts if s.static.lemma == '"<ins>"'])
     score += WEIGHTS['unk'] * sum([ct for lm, ct in src_words.items()
                                    if lm.startswith('"@')])
-    mf = 0
-    ef = 0
-    for k1 in set(src_feats.keys()) | set(tgt_feats.keys()):
-        for k2 in set(src_feats[k1].keys()) | set(tgt_feats[k1].keys()):
-            ef += (src_feats[k1][k2] - tgt_feats[k1][k2]).total()
-            mf += (tgt_feats[k1][k2] - src_feats[k1][k2]).total()
+    mf, ef = cg3_score.symmetric_difference(tgt_feats, src_feats)
+    score += WEIGHTS['missing_feats'] * mf
+    score += WEIGHTS['extra_feats'] * ef
+    return score
+
+def score_buffer(slb, tlw, index):
+    if index in SKIP_WINDOWS:
+        return 0
+    score = 0
+    src_words, src_feats, src_counts = cg3_score.parse_window(
+        slb, TARGET_FEATS)
+    score += WEIGHTS['cohorts'] * abs(src_counts['cohort'] - len(tlw.cohorts))
+    tgt_words, _, tgt_feats = target_words_and_feats[index]
+    extra, missing = cg3_score.symmetric_difference(src_words, tgt_words)
+    score += WEIGHTS['missing'] * missing
+    score += WEIGHTS['extra'] * extra
+    score += WEIGHTS['ambig'] * (src_counts['reading'] - src_counts['cohort'])
+    score += WEIGHTS['ins'] * src_counts['ins']
+    score += WEIGHTS['unk'] * src_counts['unk']
+    mf, ef = cg3_score.symmetric_difference(tgt_feats, src_feats)
     score += WEIGHTS['missing_feats'] * mf
     score += WEIGHTS['extra_feats'] * ef
     return score
@@ -419,33 +446,28 @@ def update_source(fname):
     global source, source_blocks, window_scores, base_score
     with open(fname, 'rb') as fin:
         source = list(parse_cg3(fin, windows_only=True))
-        source_blocks = []
-        fin.seek(8)
-        block = fin.read()
-        pos = 0
-        for i in range(len(source)):
-            while block[pos] != 1:
-                if block[pos] == 2:
-                    pos += 2
-                elif block[pos] == 3:
-                    ln = struct.unpack('<I', block[pos+1:pos+5])[0]
-                    pos += ln + 3
-            ln = struct.unpack('<I', block[pos+1:pos+5])[0]
-            source_blocks.append(block[pos:pos+ln+5])
-            pos += ln + 5
+        fin.seek(0)
+        source_blocks = list(cg3_score.iter_blocks(fin.read()))
     window_scores = [score_window(s, t, i) for i, (s, t) in enumerate(zip(source, target))]
     base_score = sum(window_scores)
 update_source(args.source)
 print(f'{len(source)=}, {len(target)=}')
 
+from cg3 import parse_binary_window
+BINARY = True
 def score_rule(rule, gpath, windows):
     with open(gpath, 'w') as fout:
         fout.write(RULE_HEADER + rule[1])
     score = 0
     last_window = 0
-    for idx, slw in zip(windows, run_windows(gpath, windows)):
+    for idx, slb in zip(windows, run_windows(gpath, windows)):
         score += sum(window_scores[last_window:idx])
-        score += score_window(slw, target[idx], idx)
+        if BINARY:
+            score += score_buffer(slb, target[idx], idx)
+            #print(parse_binary_window(slb[5:]))
+        else:
+            slw = parse_binary_window(slb[5:])
+            score += score_window(slw, target[idx], idx)
         last_window = idx+1
     score += sum(window_scores[last_window:])
     return score
@@ -472,6 +494,7 @@ with (TemporaryDirectory() as tmpdir,
     cur.execute('CREATE TABLE errors(rule, tags1, tags2, window, cohort, cohort_key)')
     cur.execute('CREATE TABLE context(rtype, rule TEXT, relation TEXT, count INT, error_label TEXT)')
     cur.execute('CREATE TABLE tests(cohort INTEGER, pattern TEXT, is_feat)')
+    cur.execute('CREATE INDEX test_index ON tests(cohort)')
     con.commit()
     rule_output.write(initial_rule_output)
 

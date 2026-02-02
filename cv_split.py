@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import argparse
+import json
 import os
 import struct
 
@@ -9,7 +10,13 @@ parser.add_argument('source')
 parser.add_argument('target')
 parser.add_argument('out_dir')
 parser.add_argument('--folds', type=int, default=5)
+parser.add_argument('--skip_windows', action='store')
 args = parser.parse_args()
+
+SKIP = set()
+if args.skip_windows:
+    with open(args.skip_windows) as fin:
+        SKIP = set(json.loads(fin.read()))
 
 os.makedirs(args.out_dir, exist_ok=True)
 
@@ -32,12 +39,15 @@ for i in range(args.folds):
 
 def blocks(buf):
     i = 8
+    n = 0
     while i < len(buf):
         spec = buf[i]
         i += 1
         if spec == 1:
             ln = struct.unpack('<I', buf[i:i+4])[0]
-            yield buf[i-1:i+4+ln]
+            if n not in SKIP:
+                yield buf[i-1:i+4+ln]
+            n += 1
             i += 4 + ln
         elif spec == 2:
             i += 1
