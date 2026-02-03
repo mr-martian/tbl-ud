@@ -104,7 +104,7 @@ def iter_blocks(buf):
             pos += 2
         elif buf[pos] == 3:
             ln = u32_reader.unpack_from(buf, pos+1)[0]
-            pos += ln + 3
+            pos += ln + 5
 
 def symmetric_difference(d1, d2):
     t1, t2 = 0, 0
