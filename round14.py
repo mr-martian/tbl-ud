@@ -15,6 +15,7 @@ from tempfile import TemporaryDirectory, NamedTemporaryFile
 import time
 
 START = time.time()
+LAST_ITER_START = START
 
 RTYPES = [
     'remove',
@@ -489,13 +490,15 @@ with (TemporaryDirectory() as tmpdir,
     rule_output.write(initial_rule_output)
 
     def log_scores(iteration, src_path):
-        global target, rule_output, EXCLUDE
+        global target, rule_output, EXCLUDE, LAST_ITER_START
         update_source(src_path)
         base_per = PER(source, target, TARGET_FEATS, SKIP_WINDOWS)
         rule_output.write('####################\n')
         rule_output.write(f'## {iteration}: {base_score} PER_lem {base_per[0]:.2f}% PER_form {base_per[1]:.2f}%\n')
         rule_output.write('####################\n')
-        print(f'{iteration=}, {base_score=}, {len(EXCLUDE)=} PER_lem {base_per[0]:.2f}% PER_form {base_per[1]:.2f}%')
+        diff = time.time() - LAST_ITER_START
+        LAST_ITER_START = time.time()
+        print(f'{iteration=}, {base_score=}, {len(EXCLUDE)=} PER_lem {base_per[0]:.2f}% PER_form {base_per[1]:.2f}% round duration {diff:.2f}')
 
     for iteration in range(args.iterations):
         src_path = os.path.join(tmpdir, f'output.{iteration}.bin')
