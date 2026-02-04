@@ -7,13 +7,12 @@ import "core:os"
 import "core:os/os2"
 import "core:slice"
 import "core:strings"
-import "core:text/regex"
 
 Options :: struct {
     grammar: string `args:"pos=0,required" usage:"grammar path"`,
     src: string `args:"pos=1,required" usage:"input path"`,
     tgt: string `args:"pos=2,required" usage:"input path"`,
-    target_feats: string `args:"pos=3,required" usage:"target feat regex"`,
+    target_lang: string `args:"pos=3,required" usage:"target lang code"`,
     cohorts: int,
     missing: int,
     extra: int,
@@ -24,12 +23,106 @@ Options :: struct {
     extra_feats: int,
 }
 
-FEATS : regex.Regular_Expression
+LANG :: enum {
+    BLX,
+    ENG,
+    GRC,
+}
+
+CURRENT_LANG := LANG.ENG
 
 is_feat :: proc(buf: string) -> bool {
-    match, success := regex.match(FEATS, buf)
-    defer regex.destroy_capture(match)
-    return success
+    if len(buf) == 0 {
+	return false
+    }
+    switch CURRENT_LANG {
+    case .BLX:
+	switch buf[0] {
+	case 'A':
+	    return (strings.starts_with(buf, "Adjz=") ||
+		    strings.starts_with(buf, "Aspect="))
+	case 'C':
+	    return strings.starts_with(buf, "Caus=")
+	case 'D':
+	    return strings.starts_with(buf, "Degree=")
+	case 'E':
+	    return strings.starts_with(buf, "Emph=")
+	case 'L':
+	    return strings.starts_with(buf, "Loc=")
+	case 'M':
+	    return strings.starts_with(buf, "Mood=")
+	case 'N':
+	    return (strings.starts_with(buf, "Nmlz=") ||
+		    strings.starts_with(buf, "NumType=") ||
+		    strings.starts_with(buf, "Number="))
+	case 'P':
+	    return (strings.starts_with(buf, "Pluraction=") ||
+		    strings.starts_with(buf, "Polarity=") ||
+		    strings.starts_with(buf, "Poss="))
+	case 'R':
+	    return strings.starts_with(buf, "Redup=")
+	case 'V':
+	    return strings.starts_with(buf, "Voice=")
+	}
+    case .ENG:
+	switch buf[0] {
+	case 'A':
+	    return strings.starts_with(buf, "Animacy=")
+	case 'C':
+	    return strings.starts_with(buf, "Case=")
+	case 'D':
+	    return (strings.starts_with(buf, "Definite=") ||
+		    strings.starts_with(buf, "Degree="))
+	case 'G':
+	    return strings.starts_with(buf, "Gender=")
+	case 'L':
+	    return strings.starts_with(buf, "LexCat=")
+	case 'M':
+	    return strings.starts_with(buf, "Mood=")
+	case 'N':
+	    return (strings.starts_with(buf, "Number=") ||
+		    strings.starts_with(buf, "NumType="))
+	case 'P':
+	    return (strings.starts_with(buf, "Person=") ||
+		    strings.starts_with(buf, "PronType="))
+	case 'T':
+	    return strings.starts_with(buf, "Tense=")
+	case 'V':
+	    return strings.starts_with(buf, "VerbForm=")
+	}
+    case .GRC:
+	switch buf[0] {
+	case 'A':
+	    return strings.starts_with(buf, "Aspect=")
+	case 'C':
+	    return strings.starts_with(buf, "Case=")
+	case 'D':
+	    return (strings.starts_with(buf, "Definite=") ||
+		    strings.starts_with(buf, "Degree="))
+	case 'E':
+	    return strings.starts_with(buf, "ExtPos=")
+	case 'G':
+	    return strings.starts_with(buf, "Gender=")
+	case 'M':
+	    return strings.starts_with(buf, "Mood=")
+	case 'N':
+	    return (strings.starts_with(buf, "NumType=") ||
+		    strings.starts_with(buf, "Number="))
+	case 'P':
+	    return (strings.starts_with(buf, "Person=") ||
+		    strings.starts_with(buf, "Polarity=") ||
+		    strings.starts_with(buf, "Poss=") ||
+		    strings.starts_with(buf, "PronType="))
+	case 'R':
+	    return strings.starts_with(buf, "Reflex=")
+	case 'T':
+	    return strings.starts_with(buf, "Tense=")
+	case 'V':
+	    return (strings.starts_with(buf, "VerbForm=") ||
+		    strings.starts_with(buf, "Voice="))
+	}
+    }
+    return false
 }
 
 read_u16 :: proc(buf: []u8, offset: u16) -> u16 {
@@ -41,17 +134,14 @@ read_u32 :: proc(buf: []u8, offset: u32) -> u32 {
 }
 
 score_buffer :: proc(src: []byte, tgt: []byte, opt: Options) -> (score: int) {
-    word_counts := make(map[string]int)
-    defer delete(word_counts)
-    feat_counts := make(map[[2]string]int)
-    defer delete(feat_counts)
+    word_counts := make(map[[2]string]int)
+    feat_counts := make(map[[3]string]int)
     // SRC
     pos : u16 = 2 // skip flags
     src_tag_count := read_u16(src, pos)
     pos += 2
     src_tags := make([]string, src_tag_count)
     src_feats : [dynamic]u16
-    defer delete(src_tags)
     ins_tag : u16 = src_tag_count + 1
     src_tag : u16 = src_tag_count + 1
     size: u16
@@ -121,14 +211,11 @@ score_buffer :: proc(src: []byte, tgt: []byte, opt: Options) -> (score: int) {
 	    if strings.starts_with(src_tags[lem], "\"@") {
 		score += opt.unk
 	    }
-	    key := fmt.aprintf("%s %s", src_tags[lem], src_tags[reading_tags[0]])
-	    word_counts[key] += 1
+	    word_counts[{src_tags[lem], src_tags[reading_tags[0]]}] += 1
 	    for t in reading_tags {
 		_, found := slice.binary_search(src_feats[:], t)
 		if found {
-		    //sub_dict := feat_counts[key]
-		    //sub_dict[src_tags[t]] += 1
-		    feat_counts[{key, src_tags[t]}] += 1
+		    feat_counts[{src_tags[lem], src_tags[reading_tags[0]], src_tags[t]}] += 1
 		}
 	    }
 	}
@@ -142,7 +229,6 @@ score_buffer :: proc(src: []byte, tgt: []byte, opt: Options) -> (score: int) {
     pos += 2
     tgt_tags := make([]string, tgt_tag_count)
     tgt_feats : [dynamic]u16
-    defer delete(tgt_tags)
     for i in 0..<tgt_tag_count {
 	size = read_u16(tgt, pos)
 	pos += 2
@@ -195,26 +281,23 @@ score_buffer :: proc(src: []byte, tgt: []byte, opt: Options) -> (score: int) {
 		append(&reading_tags, read_u16(tgt, pos))
 		pos += 2
 	    }
-	    key := fmt.aprintf("%s %s", tgt_tags[lem], tgt_tags[reading_tags[0]])
-	    word_counts[key] -= 1
+	    word_counts[{tgt_tags[lem], tgt_tags[reading_tags[0]]}] -= 1
 	    for t in reading_tags {
 		_, found := slice.binary_search(tgt_feats[:], t)
 		if found {
-		    feat_counts[{key, tgt_tags[t]}] -= 1
+		    feat_counts[{tgt_tags[lem], tgt_tags[reading_tags[0]], tgt_tags[t]}] -= 1
 		}
 	    }
 	}
     }
-    for key in word_counts {
-	val := word_counts[key]
+    for key, val in word_counts {
 	if val > 0 {
 	    score += val * opt.extra
 	} else {
 	    score -= val * opt.missing
 	}
     }
-    for key in feat_counts {
-	val := feat_counts[key]
+    for key, val in feat_counts {
 	if val > 0 {
 	    score += val * opt.extra_feats
 	} else {
@@ -229,12 +312,14 @@ main :: proc() {
     style : flags.Parsing_Style = .Unix
     flags.parse_or_exit(&opt, os.args, style)
 
-    fmt.println("grammar:", opt.grammar)
-    fmt.println("unk:", opt.unk)
-
-    fperr: regex.Error
-    FEATS, fperr = regex.create(opt.target_feats)
-    defer regex.destroy_regex(FEATS)
+    switch opt.target_lang {
+    case "blx":
+	CURRENT_LANG = .BLX
+    case "eng":
+	CURRENT_LANG = .ENG
+    case "grc":
+	CURRENT_LANG = .GRC
+    }
 
     opt.cohorts += 1
     opt.missing += 1
@@ -245,17 +330,20 @@ main :: proc() {
     opt.missing_feats += 1
     opt.extra_feats += 1
 
-    fmt.println(opt)
+    state, src, stderr, serr := os2.process_exec({
+	command = {"vislcg3", "-g", opt.grammar, "-I", opt.src,
+		   "--in-binary", "--out-binary"},
+    }, context.allocator)
+    defer delete(src)
+    defer delete(stderr)
 
-    fmt.println("loading", opt.src)
-    src, serr := os2.read_entire_file_from_path(opt.src, context.allocator)
-    fmt.println("loading", opt.tgt)
     tgt, terr := os2.read_entire_file_from_path(opt.tgt, context.allocator)
+    defer delete(tgt)
 
-    fmt.println("src", len(src), serr)
-    fmt.println("tgt", len(tgt), terr)
-
-    // TODO: pass src through grammar before scoring
+    arena_data := make([]u8, mem.Megabyte)
+    arena: mem.Arena
+    mem.arena_init(&arena, arena_data)
+    context.allocator = mem.arena_allocator(&arena)
 
     spos : u32 = 8
     tpos : u32 = 8
@@ -300,6 +388,7 @@ main :: proc() {
 	windows += 1
 	spos += slen
 	tpos += tlen
+	mem.arena_free_all(&arena)
     }
     fmt.println("score", score, "windows", windows)
 }

@@ -14,3 +14,4 @@ callgrind*
 *.log
 !rempunct.cg3
 !segment_eng.cg3
+ch4_score/ch4_score
