@@ -28,7 +28,7 @@ else
 fi
 
 conllu=$(ls ud-treebanks-v2.17/${tb}/*train*.conllu)
-dev_conllu=$(ls ud-treebanks-v2.17/${tb}/*dev*.conllu)
+dev_conllu=$(ls ud-treebanks-v2.17/${tb}/*dev*.conllu 2>/dev/null || ls ud-treebanks-v2.17/${tb}/*test*.conllu)
 base=$(basename "$conllu")
 base="${base}.${mode}.${shuf_lang}.${count}"
 dev_base="${base}.dev"

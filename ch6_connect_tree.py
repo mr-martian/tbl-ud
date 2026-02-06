@@ -15,6 +15,15 @@ def calc_depth(words):
         return depth[n]
     for n in range(len(words)):
         depth[n] = get_depth(n)
+    if max(depth) > 0:
+        mn = depth[0]
+        ml = 0
+        for i in range(1, len(words)):
+            if depth[i] < mn:
+                mn = depth[i]
+                ml = i
+        words[ml][6] = '0'
+        words[ml][7] = 'root'
     return depth
 
 for sent in utils.conllu_sentences(sys.stdin):
