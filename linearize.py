@@ -2,6 +2,7 @@ from cg3 import parse_binary_stream, Window
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 import itertools
+import utils
 
 ALL_RULES = []
 
@@ -303,17 +304,39 @@ class BaseSentence:
     heads: dict = field(default_factory=dict)
     base_score: int = 0
     wl: WindowLinearizer = None
+    descriptions: list = field(default_factory=list)
+    id2idx: dict = field(default_factory=dict)
 
-    @staticmethod
-    def from_input(src, tgt):
-        raise NotImplementedError
+    def preprocess(self):
+        pass
 
     def before(self, a, b):
         # return True if a is unambiguously before b in the correct order
         raise NotImplementedError
 
+    @classmethod
+    def from_input(cls, src, tgt):
+        ret = cls(source=src, target=tgt)
+        ret.heads[0] = 0
+        for cohort in src.cohorts:
+            ret.make_descriptions(cohort)
+        ret.wl = WindowLinearizer(ret.source)
+        ret.preprocess()
+        return ret
+
     def describe_word(self, wid):
-        raise NotImplementedError
+        yield from self.descriptions[self.id2idx[wid]]
+
+    def make_descriptions(self, cohort):
+        self.id2idx[cohort.dep_self] = len(self.descriptions)
+        reading = utils.primary_reading(cohort)
+        upos = reading.tags[0]
+        rel = [t for t in reading.tags if t[0] == '@'][0]
+        lem = reading.lemma
+        self.descriptions.append([{rel}, {upos}, {lem, upos}, {lem, rel}])
+        self.tagset.add(lem)
+        self.tagset.update(reading.tags)
+        self.heads[cohort.dep_self] = cohort.dep_parent
 
     def wrong_pairs(self, seq=None):
         s = seq or self.wl.sequence
@@ -365,6 +388,7 @@ class BaseSentence:
                 yield from self.expand_rule(self.heads[i], i, 'F', w)
             # TODO: un-front, un-back
             elif (self.wl.sequence.index(i) + 1 == self.wl.sequence.index(j)
+                  and self.before(i, self.heads[j])
                   and not any(self.before(j, x) and self.before(x, i)
                               for x in self.wl.sequence)):
                 yield from self.expand_rule(i, None, 'MR', 0)
@@ -376,9 +400,16 @@ class BaseTrainer:
     corpus: list = field(default_factory=list)
     iterations: int = 10
     count: int = 100
+    sentence_class = BaseSentence
 
-    def load_corpus(self, source, target):
-        raise NotImplementedError
+    def load_corpus(self, src_fname, tgt_fname):
+        with (open(src_fname, 'rb') as sfin, open(tgt_fname) as tfin):
+            self.corpus = [
+                self.sentence_class.from_input(
+                    src, list(utils.conllu_words(tgt)))
+                for src, tgt in zip(
+                        parse_binary_stream(sfin, windows_only=True),
+                        utils.conllu_sentences(tfin))]
 
     def generate_rule(self):
         rule_freq = Counter()

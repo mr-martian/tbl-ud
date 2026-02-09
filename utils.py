@@ -23,10 +23,12 @@ def conllu_sentences(fin):
     if cur:
         yield cur
 
+from collections import namedtuple
+ud_word = namedtuple('UDWord', ['idx', 'form', 'lemma', 'upos', 'xpos', 'feats', 'head', 'deprel', 'deps', 'misc'])
 def conllu_words(sent):
     for line in sent:
         if line.count('\t') == 9 and line.split('\t', 1)[0].isdigit():
-            yield line.strip().split('\t')
+            yield ud_word(*line.strip().split('\t'))
 
 def conllu_feature_dict(field, with_prefix=False):
     if field == '_':
@@ -108,3 +110,9 @@ def check_upos(h, g):
     if h == 'NOUN' and g == 'AUX':
         return False
     return True
+
+def primary_reading(cohort):
+    for r in cohort.readings:
+        if 'SOURCE' in r.tags:
+            continue
+        return r

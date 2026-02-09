@@ -1,110 +1,39 @@
 from linearize import *
-from cg3 import Window
-from functools import cached_property
-
-@dataclass
-class APWord:
-    lemma: str = ''
-    pos: str = ''
-    tags: set = field(default_factory=set)
-
-    @cached_property
-    def relation(self):
-        for t in self.tags:
-            if t[0] == '@':
-                return t
-
-    def describe(self):
-        yield {self.relation}
-        yield {self.pos}
-        yield {self.lemma, self.pos}
-        yield {self.lemma, self.relation}
-
-def parse_apertium(line):
-    # be very lazy for now
-    words = []
-    for blob in line.split('^'):
-        blob2 = blob.split('>$')
-        if len(blob2) == 1:
-            continue
-        ls = blob2[0].split('><')
-        w = APWord()
-        w.lemma, w.pos = ls[0].split('<')
-        w.lemma = '"' + w.lemma + '"'
-        w.tags.update(ls[1:])
-        words.append(w)
-    return words
-
-def parse_conllu(block):
-    ret = []
-    for line in block.splitlines():
-        cols = line.strip().split('\t')
-        if len(cols) != 10 or not cols[0].isdigit():
-            continue
-        feats = set() if cols[5] == '_' else set(cols[5].split('|'))
-        ret.append(APWord(lemma='"'+cols[2]+'"',
-                          pos=cols[2],
-                          tags=feats | {'@'+cols[7]}))
-    return ret
-
 
 @dataclass
 class Sentence(BaseSentence):
-    source_words: dict = field(default_factory=dict)
     alignments: dict = field(default_factory=dict)
 
-    @staticmethod
-    def from_input(src, tgt):
-        ret = Sentence(source=src, target=tgt)
-        ret.heads[0] = 0
+    def preprocess(self):
         ttags = defaultdict(list)
         all_ttags = []
-        for i, w in enumerate(tgt):
-            ttags[(w.lemma, w.pos)].append((i, w.tags))
-            all_ttags.append((i, w.tags | {w.lemma, w.pos}))
-        ss = set()
-        for cohort in src.cohorts:
-            for reading in cohort.readings:
-                if 'SOURCE' in reading.tags:
-                    continue
-                ret.tagset.add(reading.lemma)
-                ret.tagset.update(reading.tags)
-                key = set(reading.tags[1:])
-                ret.source_words[cohort.dep_self] = APWord(
-                    lemma=reading.lemma, pos=reading.tags[0], tags=key)
-                comp = ttags[(reading.lemma, reading.tags[0])]
-                if not comp:
-                    comp = all_ttags
-                    key |= {reading.lemma, reading.tags[0]}
-                options = defaultdict(list)
-                for i, tg in comp:
-                    options[(len(tg & key), len(tg | key))].append(i)
-                ls = sorted(options.keys(), key=lambda x: x[0]/x[1])
-                ret.alignments[cohort.dep_self] = options[ls[-1]]
-                ret.heads[cohort.dep_self] = cohort.dep_parent
-                break
-        ret.wl = WindowLinearizer(ret.source)
-        return ret
-
-    def describe_word(self, wid):
-        yield from self.source_words[wid].describe()
+        for i, w in enumerate(self.target):
+            tags = set() if w.feats == '_' else set(w.feats.split('|'))
+            ttags[('"'+w.lemma+'"', w.upos)].append((i, tags))
+            all_ttags.append((i, tags | {w.lemma, w.upos}))
+        for cohort in self.source.cohorts:
+            reading = utils.primary_reading(cohort)
+            key = set([t for t in reading.tags[1:] if '=' in t])
+            comp = ttags[(reading.lemma, reading.tags[0])]
+            if not comp:
+                comp = all_ttags
+                key |= {reading.lemma, reading.tags[0]}
+            options = defaultdict(list)
+            for i, tg in comp:
+                options[(len(tg & key), max(len(tg | key), 1))].append(i)
+            ls = sorted(options.keys(), key=lambda x: x[0]/x[1])
+            if ls:
+                self.alignments[cohort.dep_self] = options[ls[-1]]
 
     def before(self, a, b):
         # is a unambiguously before b in the target data?
+        if not self.alignments.get(a) or not self.alignments.get(b):
+            return False
         return self.alignments[a][-1] < self.alignments[b][0]
 
 @dataclass
 class Trainer(BaseTrainer):
-    def load_corpus(self, src, tgt):
-        with open(src, 'rb') as fin:
-            source = list(parse_binary_stream(fin, windows_only=True))
-
-        with open(tgt) as fin:
-            target = [parse_conllu(block)
-                      for block in fin.read().split('\n\n')]
-
-        self.corpus = [Sentence.from_input(s, t)
-                       for s, t in zip(source, target)]
+    sentence_class = Sentence
 
 if __name__ == '__main__':
     t = Trainer()

@@ -16,11 +16,10 @@ with open(args.in_file) as fin, open(args.out_file, 'w') as fout:
         print(f'# sent_id = s{index}', file=fout)
         for word in utils.conllu_words(sent):
             roll = random.random()
-            if roll < args.relabel_prob and word[7] != 'root':
+            if roll < args.relabel_prob and word.deprel != 'root':
                 if roll < args.detach_prob:
-                    word[6] = '_'
-                    word[7] = '_'
+                    word = word._replace(deprel='_', head='_')
                 else:
-                    word[7] = random.choice(RELS)
+                    word = word._replace(deprel=random.choice(RELS))
             print('\t'.join(word), file=fout)
         print('', file=fout)

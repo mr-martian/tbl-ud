@@ -22,8 +22,7 @@ def calc_depth(words):
             if depth[i] < mn:
                 mn = depth[i]
                 ml = i
-        words[ml][6] = '0'
-        words[ml][7] = 'root'
+        words[ml] = words[ml]._replace(head='0', deprel='root')
     return depth
 
 for sent in utils.conllu_sentences(sys.stdin):
@@ -33,7 +32,7 @@ for sent in utils.conllu_sentences(sys.stdin):
     words = list(utils.conllu_words(sent))
     depth = calc_depth(words)
     for wid, wd in enumerate(words, 1):
-        if wd[6] == '_':
+        if wd.head == '_':
             l = 1
             r = len(words)
             for wid2, wd2 in enumerate(words, 1):
@@ -51,7 +50,6 @@ for sent in utils.conllu_sentences(sys.stdin):
                 if depth[i] < mn:
                     mni = i + 1
                     mn = depth[i]
-            wd[6] = str(mni)
-            wd[7] = 'dep'
-        print('\t'.join(wd))
+            words[wid-1] = wd._replace(head=str(mni), deprel='dep')
+        print('\t'.join(words[wid-1]))
     print()

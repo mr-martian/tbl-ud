@@ -1,6 +1,7 @@
 import argparse
 import matplotlib.pyplot as plt
 from nltk.metrics import edit_distance
+import utils
 
 parser = argparse.ArgumentParser()
 parser.add_argument('rule_file')
@@ -25,13 +26,7 @@ dev = twl.Trainer()
 dev.load_corpus(args.dev_src, args.dev_tgt)
 
 def lemma(sent, n):
-    if args.tree:
-        cohort = sent.source.cohorts[sent.idmap[n]]
-        for r in cohort.readings:
-            if 'SOURCE' not in r.tags:
-                return r.lemma.strip('"')
-    else:
-        return sent.source_words[n].lemma
+    return utils.primary_reading(sent.source.cohorts[sent.id2idx[n]]).lemma[1:-1]
 
 def eval_corpus(corpus):
     max_loss = 0
