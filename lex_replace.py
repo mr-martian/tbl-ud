@@ -65,20 +65,23 @@ source = []
 source_blocks = []
 lemma_index = defaultdict(list)
 source_lemmas = []
-ambiguity = Counter()
+extra = Counter()
+good = Counter()
+priority = Counter()
 source_counts = []
 source_maps = []
 base_scores = []
 
 def reload_source(data, initial=False):
-    global source, source_blocks, lemma_index, source_lemmas, ambiguity, source_counts, source_maps, base_scores
+    global source, source_blocks, lemma_index, source_lemmas, extra, good, priority, source_counts, source_maps, base_scores
     source = []
     source_blocks = []
     if initial:
         lemma_index = defaultdict(list)
         source_lemmas = []
         source_maps = []
-    ambiguity = Counter()
+    extra = Counter()
+    good = Counter()
     source_counts = []
     base_scores = []
     for i, block in enumerate(cg3_score.iter_blocks(data)):
@@ -89,6 +92,10 @@ def reload_source(data, initial=False):
                 continue
         source_blocks.append(block)
         window = cg3.parse_binary_window(block[5:])
+        s, c = score_window(len(source_counts), window)
+        source_counts.append(c)
+        base_scores.append(s)
+        diff = c - target_counts[len(source_counts)-1]
         cur = []
         for j, cohort in enumerate(window.cohorts):
             key = None
@@ -102,19 +109,19 @@ def reload_source(data, initial=False):
                             key += ' ' + tag
                         if tag.startswith('@'):
                             rel = tag
-                else:
+                elif desc_r(reading) in diff:
                     count += 1
             if initial:
                 cur.append((key, rel))
                 lemma_index[key].append((len(source), j))
-            ambiguity[key] += (count - 1)
+            extra[key] += count
+            if count == 0:
+                good[key] += 1
         source.append(window)
         if initial:
             source_lemmas.append(cur)
-        s, c = score_window(len(source_counts), window)
-        source_counts.append(c)
-        base_scores.append(s)
     source_maps = [None] * len(source)
+    priority = Counter({k: extra[k] / (extra[k] + good[k]) for k in extra})
 
 if args.append:
     proc = subprocess.run(['vislcg3', '--in-binary', '--out-binary',
@@ -184,8 +191,6 @@ def gen_rules_window(window_num, cohort_num):
     src = source_counts[window_num]
     tgt = target_counts[window_num]
     cohort = source[window_num].cohorts[cohort_num]
-    if len(cohort.readings) < 3:
-        return []
     drop = []
     for reading in cohort.readings:
         if 'SOURCE' in reading.tags:
@@ -193,15 +198,22 @@ def gen_rules_window(window_num, cohort_num):
         key = desc_r(reading)
         if src[key] > tgt[key]:
             drop.append(key)
+    replace = list((tgt - src).keys())
     for ctx_ls in get_context(window_num, cohort_num):
+        ctx = ' '.join(ctx_ls)
         for t in source_lemmas[window_num][cohort_num]:
             if t is None:
                 continue
             if '"' not in t:
                 continue
             for key in drop:
-                ctx = ' '.join(ctx_ls)
-                yield f'REMOVE ({key}) IF (0 ({t})) (0 (*) - (SOURCE) - ({key})) {ctx} ;'
+                dpos = key.split()[-1]
+                for key2 in replace:
+                    rpos = key2.split()[-1]
+                    if dpos != rpos:
+                        # TODO: too strict
+                        continue
+                    yield f'SUBSTITUTE ({key}) ({key2}) (*) IF (0 ({t})) {ctx} ;'
 
 def score_rule(rpath, key, rule):
     with open(rpath, 'w') as fout:
@@ -218,6 +230,23 @@ def score_rule(rpath, key, rule):
         s, d = score_window(i, window)
         diff += s - base_scores[i]
     return diff, set(windows)
+
+def select_keys():
+    seen = set()
+    factor = 1.0
+    for key, count in priority.most_common(int(args.lemma_count * factor)):
+        yield key
+        seen.add(key)
+    for key, count in extra.most_common(args.lemma_count):
+        if key in seen:
+            continue
+        yield key
+        seen.add(key)
+        if len(seen) == args.lemma_count:
+            break
+def select_keys_simple():
+    for key, count in priority.most_common(args.lemma_count):
+        yield key
 
 open_mode = 'a' if args.append else 'w'
 with (TemporaryDirectory() as tmpdir,
@@ -238,13 +267,18 @@ with (TemporaryDirectory() as tmpdir,
     for iteration in range(args.iterations):
         cur.execute('DELETE FROM rules')
         con.commit()
-        for key, count in ambiguity.most_common(args.lemma_count):
+        keys = []
+        for key in select_keys():
+            keys.append(key)
             for w, c in lemma_index[key]:
                 cur.executemany('INSERT INTO rules VALUES(?, ?)',
                                 [(key, r) for r in gen_rules_window(w, c)])
-        cur.execute('SELECT COUNT(*) as ct, key, rule FROM rules GROUP BY rule ORDER BY ct DESC LIMIT ?', (args.rule_count,))
+        rules = []
+        for key in keys:
+            cur.execute('SELECT COUNT(*) as ct, key, rule FROM rules WHERE key = ? GROUP BY rule ORDER BY ct DESC LIMIT ?', (key, args.rule_count))
+            rules += cur.fetchall()
         scored_rules = []
-        for i, (c, k, r) in enumerate(cur.fetchall()):
+        for i, (c, k, r) in enumerate(rules):
             fname = f'g_{iteration}_{i}.cg3'
             path = os.path.join(tmpdir, fname)
             d, w = score_rule(path, k, r)
