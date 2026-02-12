@@ -20,6 +20,22 @@ with open(args.train) as fin:
     axs.plot([y[1] for y in vals], label='PER of lemmas (train)')
     axs.plot([y[2] for y in vals], label='PER of forms (train)')
 
+try:
+    with open(args.train + '.dev.log') as fin:
+        xs = []
+        ylem = []
+        yform = []
+        for line in fin:
+            ls = line.split()
+            if len(ls) == 3:
+                xs.append(int(ls[0]))
+                ylem.append(float(ls[1]))
+                yform.append(float(ls[2]))
+        axs.plot(xs, ylem, label='PER of lemmas (dev)')
+        axs.plot(xs, yform, label='PER of forms (dev)')
+except FileNotFoundError:
+    pass
+
 axs.legend()
 
 plt.savefig(args.train + '.png')

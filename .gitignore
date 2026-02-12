@@ -15,3 +15,17 @@ callgrind*
 !rempunct.cg3
 !segment_eng.cg3
 ch4_score/ch4_score
+cv_data
+*.lin
+ud-treebanks-v2.17
+*.tgz
+*.png
+*.flextext
+*.fwbackup
+KJV/
+NET/
+WEB/
+corefUD1.2/
+lin-exp-data/
+sources/
+tb-logs/
