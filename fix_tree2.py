@@ -78,7 +78,7 @@ def get_rel(cohort):
 
 def get_heads(window):
     heads = {}
-    index = {0: -1}
+    index = {0: -1, None: -1}
     rels = []
     for i, c in enumerate(window.cohorts):
         heads[c.dep_self] = c.dep_parent
@@ -87,7 +87,7 @@ def get_heads(window):
     return (heads, index, rels)
 
 def get_path(wid, heads, index):
-    if wid == 0:
+    if wid == 0 or wid is None:
         return [-1]
     else:
         return [index[wid]] + get_path(heads[wid], heads, index)
@@ -256,7 +256,7 @@ def contextualize_rules(contexts, dct, ekey):
     cc = [(f'c {k}',v) for k,v in contexts['c'].most_common(ct)]
     cc += [(f'NEGATE c {k}',v) for k,v in contexts['negc'].most_common(ct)]
     targets = contexts['t'].most_common(ct)
-    ctargets = contexts['ct'].most_common(ct) or [(None, targets[0][1])]
+    ctargets = contexts['ct'].most_common(ct) or [(None, 1000000000)]
     for i_p, i_s, i_c in rel_ranges():
         for t_p in combinations(cp, i_p):
             for t_s in combinations(cs, i_s):

@@ -87,6 +87,8 @@ def reload_source(data, initial=False):
                 break
             if i in SKIP_WINDOWS:
                 continue
+        if len(source) == len(target):
+            break
         source_blocks.append(block)
         window = cg3.parse_binary_window(block[5:])
         cur = []
