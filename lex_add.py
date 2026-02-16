@@ -6,14 +6,18 @@ import io
 import itertools
 import json
 import os
+import sqlite3
 import subprocess
 import time
 from tempfile import TemporaryDirectory
 
-RULE_HEADER = 'DELIMITERS = "<$$$>" ;\nPROTECT (SOURCE) ;\n\n'
+RULE_HEADER = 'DELIMITERS = "<$$$>" ;\nOPTIONS += addcohort-attach ;\n\n'
 
 CG_BIN_HEADER = b'CGBF\x01\x00\x00\x00'
 CG_BIN_FOOTER = b'\x02\x01\x02\x02' # FLUSH, EXIT
+
+LEAF_POS = {'CCONJ', 'ADP', 'DET', 'PUNCT', 'INTJ', 'PART', 'AUX'}
+UPOS_EXCLUDE = {'DET': 'VERB'}
 
 parser = argparse.ArgumentParser()
 parser.add_argument('source')
@@ -26,7 +30,6 @@ parser.add_argument('--append', action='store_true')
 parser.add_argument('--max_sents', type=int, default=-1)
 parser.add_argument('--skip_windows', action='store')
 parser.add_argument('--max_tests', type=int, default=2)
-parser.add_argument('--batch_size', type=int, default=100)
 args = parser.parse_args()
 
 SKIP_WINDOWS = set()
@@ -60,26 +63,26 @@ with open(args.target, 'rb') as fin:
 def score_window(window_num, window):
     dct = count_lemmas(window)
     a, b = cg3_score.symmetric_difference(dct, target_counts[window_num])
+    ins = len([c for c in window.cohorts if c.static.lemma == '"<ins>"'])
+    #return a + b + ins//2, dct
     return a + b, dct
 
 source = []
 source_blocks = []
 lemma_index = defaultdict(list)
-source_lemmas = []
-ambiguity = Counter()
+source_descs = []
+priority = Counter()
 source_counts = []
 source_maps = []
 base_scores = []
 
 def reload_source(data, initial=False):
-    global source, source_blocks, lemma_index, source_lemmas, ambiguity, source_counts, source_maps, base_scores
+    global source, source_blocks, lemma_index, source_descs, priority, source_counts, source_maps, base_scores
     source = []
     source_blocks = []
-    if initial:
-        lemma_index = defaultdict(list)
-        source_lemmas = []
-        source_maps = []
-    ambiguity = Counter()
+    lemma_index = defaultdict(list)
+    source_descs = []
+    priority = Counter()
     source_counts = []
     base_scores = []
     for i, block in enumerate(cg3_score.iter_blocks(data)):
@@ -96,6 +99,7 @@ def reload_source(data, initial=False):
         for j, cohort in enumerate(window.cohorts):
             key = None
             rel = None
+            pos = None
             count = 0
             for reading in cohort.readings:
                 if reading.tags[0] == 'SOURCE':
@@ -107,14 +111,19 @@ def reload_source(data, initial=False):
                             rel = tag
                 else:
                     count += 1
-            if initial:
-                cur.append((key, rel))
-                lemma_index[key].append((len(source), j))
-            ambiguity[key] += (count - 1)
+                    pos = reading.tags[0]
+            both = None
+            if pos and rel:
+                both = f'{pos} {rel}'
+            #cur.append((pos, rel, both))
+            cur.append((both,))
         source.append(window)
-        if initial:
-            source_lemmas.append(cur)
+        source_descs.append(cur)
         s, c = score_window(len(source_counts), window)
+        missing = target_counts[len(source_counts)] - c
+        for key in missing:
+            lemma_index[key].append(len(source_counts))
+            priority[key] += missing[key]
         source_counts.append(c)
         base_scores.append(s)
     source_maps = [None] * len(source)
@@ -152,7 +161,7 @@ def get_context(window_num, cohort_num):
     target = window.cohorts[cohort_num].dep_self
     def desc_single(rel, wid):
         if wid in locs:
-            options = source_lemmas[window_num][locs[wid]]
+            options = source_descs[window_num][locs[wid]]
             for op in options:
                 if op is not None:
                     yield f'({rel} ({op}))'
@@ -169,12 +178,12 @@ def get_context(window_num, cohort_num):
         paths.append(('p', p))
         if parents[p]:
             paths.append(('p', p, 'p', parents[p]))
-        for s in siblings[p]:
-            paths.append(('p', p, 's', s))
+        #for s in siblings[p]:
+        #    paths.append(('p', p, 's', s))
     for s in siblings[target]:
         paths.append(('s', s))
-        for c in children[s]:
-            paths.append(('s', s, 'c', c))
+        #for c in children[s]:
+        #    paths.append(('s', s, 'c', c))
     for c in children[target]:
         paths.append(('c', c))
         for cc in children[c]:
@@ -183,44 +192,57 @@ def get_context(window_num, cohort_num):
         for seq in itertools.combinations(paths, n):
             yield from itertools.product(*[desc_link(p) for p in seq])
 
-def gen_rules_window(window_num, cohort_num):
-    src = source_counts[window_num]
-    tgt = target_counts[window_num]
-    cohort = source[window_num].cohorts[cohort_num]
-    if len(cohort.readings) < 3:
-        return []
-    drop = []
-    for reading in cohort.readings:
-        if 'SOURCE' in reading.tags:
+def gen_contexts(window_num):
+    window = source[window_num]
+    for cohort_num, cohort in enumerate(window.cohorts):
+        upos = {r.tags[0] for r in cohort.readings} - {'SOURCE'}
+        if upos & LEAF_POS:
             continue
-        key = desc_r(reading)
-        if src[key] > tgt[key]:
-            drop.append(key)
-    for ctx_ls in get_context(window_num, cohort_num):
-        ctx = ' '.join(ctx_ls)
-        for t in source_lemmas[window_num][cohort_num]:
-            if t is None:
-                continue
-            if '"' not in t:
-                continue
-            for key in drop:
-                yield f'REMOVE ({key}) IF (0 ({t})) (0 (*) - (SOURCE) - ({key})) {ctx} ;'
+        if not upos:
+            continue
+        upos = list(upos)[0]
+        for ctx_ls in set(get_context(window_num, cohort_num)):
+            ctx = ' '.join(ctx_ls)
+            for t in source_descs[window_num][cohort_num]:
+                if not t:
+                    continue
+                yield (window_num, upos, t, ctx)
+
+def gen_rules_window(window_num, key):
+    tpos = key.split()[-1]
+    window = source[window_num]
+    for cohort_num, cohort in enumerate(window.cohorts):
+        upos = {r.tags[0] for r in cohort.readings} - {'SOURCE'}
+        if upos & LEAF_POS:
+            continue
+        if tpos == 'DET' and 'VERB' in upos:
+            continue
+        for ctx_ls in set(get_context(window_num, cohort_num)):
+            ctx = ' '.join(ctx_ls)
+            for t in source_descs[window_num][cohort_num]:
+                if not t:
+                    continue
+                yield f'ADDCOHORT ("<ins>" {key} @dep) BEFORE ({t}) IF (NEGATE c ({key})) {ctx} ;'
 
 def score_rule(rpath, key, rule):
     with open(rpath, 'w') as fout:
         fout.write(RULE_HEADER + rule)
-    windows = sorted(set([x[0] for x in lemma_index[key]]))
+    #windows = lemma_index[key]
+    windows = list(range(len(source_blocks)))
     inp = CG_BIN_HEADER + b''.join(source_blocks[i] for i in windows) + CG_BIN_FOOTER
     proc = subprocess.run(['vislcg3', '--in-binary', '--out-binary',
                            '-g', rpath],
                           capture_output=True, input=inp)
     diff = 0
+    actual_windows = set()
     for i, window in zip(windows,
                          cg3.parse_binary_stream(io.BytesIO(proc.stdout),
                                                  windows_only=True)):
         s, d = score_window(i, window)
         diff += s - base_scores[i]
-    return diff, set(windows)
+        if s != base_scores[i]:
+            actual_windows.add(i)
+    return diff, actual_windows
 
 open_mode = 'a' if args.append else 'w'
 with (TemporaryDirectory() as tmpdir,
@@ -230,40 +252,78 @@ with (TemporaryDirectory() as tmpdir,
     else:
         rule_output.write(RULE_HEADER)
 
+    skip = set()
+
+    con = sqlite3.connect(os.path.join(tmpdir, 'db.sqlite'))
+    cur = con.cursor()
+    cur.execute('CREATE TABLE context(window, upos, target, ctx)')
+    #cur.execute('CREATE INDEX blah ON context(target, ctx)')
+    con.commit()
+    t0 = time.time()
+    for w in range(len(source)):
+        cur.executemany('INSERT INTO context VALUES(?, ?, ?, ?)',
+                        gen_contexts(w))
+    t1 = time.time()
+    print('inserted in %.5f seconds' % (t1 - t0))
+    cur.execute('CREATE INDEX blah ON context(upos, target, ctx)')
+    t2 = time.time()
+    print('indexed in %.5f seconds' % (t2 - t1))
+    mx = 0
+    if len(priority) > 1:
+        mx = priority.most_common(1)[0][1]
+    cur.execute('DELETE FROM context WHERE (upos, target, ctx) IN (SELECT upos, target, ctx FROM context GROUP BY upos, target, ctx HAVING COUNT(*) > ?)', (mx*2,))
+    t3 = time.time()
+    print('deleted in %.5f seconds' % (t3 - t2))
+    cur.execute('CREATE TABLE freq AS SELECT upos, target, ctx, COUNT(*) as ct FROM context GROUP BY upos, target, ctx')
+    cur.execute('CREATE INDEX blah2 ON freq(upos)')
+    cur.execute('CREATE INDEX blah3 ON freq(ct)')
+    t4 = time.time()
+    print('flipped in %.5f seconds' % (t4 - t3))
+    con.commit()
+    print('\ncontexts entered')
+
     print('## 0:', sum(base_scores), file=rule_output)
     print('## 0:', sum(base_scores))
+    print(priority.most_common(args.lemma_count))
+
+    shift = Counter()
 
     for iteration in range(args.iterations):
-        freq = Counter()
-        for key, count in ambiguity.most_common(args.lemma_count):
-            print(key, count)
+        rules = []
+        for key, count in priority.most_common(args.lemma_count):
+            qs = ', '.join(['?']*len(lemma_index[key]))
+            upos = key.split()[-1]
             t0 = time.time()
-            ct = Counter()
-            for batch in itertools.batched(lemma_index[key], args.batch_size):
-                bct = Counter()
-                for w, c in batch:
-                    bct.update(gen_rules_window(w, c))
-                ct.update(dict(bct.most_common(args.rule_count * 2)))
-            freq.update(dict(((key, r), c)
-                             for r, c in ct.most_common(args.rule_count)))
-            print('\tfinished', key, 'in %.3f seconds' % (time.time() - t0))
+            mx = (count * 2) >> shift[key]
+            cur.execute(f'SELECT target, ctx, ct FROM freq f WHERE upos IS NOT ? AND EXISTS (SELECT * FROM context c WHERE c.target = f.target AND c.ctx = f.ctx AND c.window IN ({qs})) AND ct <= ? ORDER BY ct DESC LIMIT ?', (UPOS_EXCLUDE.get(upos, 'UNK'), *lemma_index[key], mx, args.rule_count))
+            shift[key] += 1
+            for t, c, ct in cur.fetchall():
+                rules.append((ct, key, f'ADDCOHORT ("<ins>" {key} @dep) BEFORE ({t}) IF (NEGATE c ({key})) {c} ;'))
+            print('queried %s in %.5f seconds' % (key, time.time() - t0))
         scored_rules = []
-        for i, ((k, r), c) in enumerate(freq.most_common(args.rule_count)):
+        for i, (c, k, r) in enumerate(rules):
             fname = f'g_{iteration}_{i}.cg3'
             path = os.path.join(tmpdir, fname)
             d, w = score_rule(path, k, r)
             print(i, d, r)
             if d < 0:
-                scored_rules.append((d, i, r, w))
+                scored_rules.append((d, i, r, w, k))
+            elif d > len(source):
+                skip.add(r)
         scored_rules.sort()
         used = set()
+        used_keys = set()
         selected = []
-        for d, i, r, w in scored_rules:
-            if w & used:
+        for d, i, r, w, k in scored_rules:
+            #if w & used:
+            #    continue
+            if k in used_keys:
                 continue
             print(r, file=rule_output)
             selected.append(r)
             used |= w
+            used_keys.add(k)
+            shift[k] = 0
         if selected:
             update = os.path.join(tmpdir, f'g_{iteration}.cg3')
             with open(update, 'w') as fout:
@@ -277,5 +337,6 @@ with (TemporaryDirectory() as tmpdir,
             reload_source(proc.stdout)
         print(f'## {iteration+1}:', sum(base_scores), file=rule_output)
         print(f'## {iteration+1}:', sum(base_scores))
+        print(priority.most_common(args.lemma_count))
         if not selected:
             break

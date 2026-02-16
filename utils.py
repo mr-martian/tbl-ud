@@ -116,3 +116,10 @@ def primary_reading(cohort):
         if 'SOURCE' in r.tags:
             continue
         return r
+
+def load_json_set(path):
+    if not path:
+        return set()
+    import json
+    with open(path) as fin:
+        return set(json.loads(fin.read()))
