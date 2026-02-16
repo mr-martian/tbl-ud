@@ -18,6 +18,7 @@ CG_BIN_FOOTER = b'\x02\x01\x02\x02' # FLUSH, EXIT
 parser = argparse.ArgumentParser()
 parser.add_argument('source')
 parser.add_argument('target')
+parser.add_argument('lang')
 parser.add_argument('iterations', type=int)
 parser.add_argument('out')
 parser.add_argument('--rule_count', type=int, default=100)
@@ -27,6 +28,7 @@ parser.add_argument('--max_sents', type=int, default=-1)
 parser.add_argument('--skip_windows', action='store')
 parser.add_argument('--max_tests', type=int, default=2)
 parser.add_argument('--batch_size', type=int, default=100)
+parser.add_argument('--threads', type=int, default=10)
 args = parser.parse_args()
 
 SKIP_WINDOWS = set()
@@ -47,13 +49,16 @@ def count_lemmas(window):
     return ret
 
 target = []
+target_blocks = []
 target_counts = []
 with open(args.target, 'rb') as fin:
-    for i, window in enumerate(cg3.parse_binary_stream(fin, windows_only=True)):
+    for i, block in enumerate(cg3_score.iter_blocks(fin.read())):
         if i == args.max_sents:
             break
         if i in SKIP_WINDOWS:
             continue
+        target_blocks.append(block)
+        window = cg3.parse_binary_window(block[5:])
         target.append(window)
         target_counts.append(count_lemmas(window))
 
@@ -222,6 +227,25 @@ def score_rule(rpath, key, rule):
         diff += s - base_scores[i]
     return diff, set(windows)
 
+def start_rule(prefix, rule):
+    gpath = prefix + '.cg3'
+    spath = prefix + '.input.bin'
+    tpath = prefix + '.output.bin'
+    with open(gpath, 'w') as fout:
+        fout.write(RULE_HEADER + rule)
+    with open(spath, 'wb') as fout:
+        fout.write(CG_BIN_HEADER + b''.join(source_blocks) + CG_BIN_FOOTER)
+    with open(tpath, 'wb') as fout:
+        fout.write(CG_BIN_HEADER + b''.join(target_blocks) + CG_BIN_FOOTER)
+    return subprocess.Popen(['ch4_pipe_score/ch4_pipe_score', gpath, spath, tpath,
+                             args.lang],
+                            stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE)
+
+def finish_rule(proc):
+    out, err = proc.communicate()
+    return int(out.decode('utf-8').split()[1])
+
 open_mode = 'a' if args.append else 'w'
 with (TemporaryDirectory() as tmpdir,
       open(args.out, open_mode) as rule_output):
@@ -248,13 +272,19 @@ with (TemporaryDirectory() as tmpdir,
                              for r, c in ct.most_common(args.rule_count)))
             print('\tfinished', key, 'in %.3f seconds' % (time.time() - t0))
         scored_rules = []
-        for i, ((k, r), c) in enumerate(freq.most_common(args.rule_count)):
-            fname = f'g_{iteration}_{i}.cg3'
-            path = os.path.join(tmpdir, fname)
-            d, w = score_rule(path, k, r)
-            print(i, d, r)
-            if d < 0:
-                scored_rules.append((d, i, r, w))
+        threshold = sum(base_scores)
+        for batch in itertools.batched(enumerate(freq.most_common(args.rule_count)), args.threads):
+            procs = []
+            for i, ((k, r), c) in batch:
+                prefix = os.path.join(tmpdir, f'g_{iteration}_{i}')
+                procs.append(start_rule(prefix, r))
+            for (i, ((k, r), c)), proc in zip(batch, procs):
+                s = finish_rule(proc)
+                print(i, s, r)
+                if s < threshold:
+                    scored_rules.append((s, i, r,
+                                         set([x[0]
+                                              for x in lemma_index[k]])))
         scored_rules.sort()
         used = set()
         selected = []
