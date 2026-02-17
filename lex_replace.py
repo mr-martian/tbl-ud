@@ -6,7 +6,6 @@ import io
 import itertools
 import json
 import os
-import sqlite3
 import subprocess
 from tempfile import TemporaryDirectory
 
@@ -18,14 +17,19 @@ CG_BIN_FOOTER = b'\x02\x01\x02\x02' # FLUSH, EXIT
 parser = argparse.ArgumentParser()
 parser.add_argument('source')
 parser.add_argument('target')
+parser.add_argument('lang')
 parser.add_argument('iterations', type=int)
 parser.add_argument('out')
-parser.add_argument('--rule_count', type=int, default=100)
-parser.add_argument('--lemma_count', type=int, default=100)
+parser.add_argument('--rule_count', type=int, default=50)
+parser.add_argument('--lemma_count', type=int, default=20)
 parser.add_argument('--append', action='store_true')
 parser.add_argument('--max_sents', type=int, default=-1)
 parser.add_argument('--skip_windows', action='store')
 parser.add_argument('--max_tests', type=int, default=2)
+parser.add_argument('--batch_size', type=int, default=100)
+parser.add_argument('--out_dir', action='store')
+parser.add_argument('--score_proc', action='store')
+parser.add_argument('--threads', type=int, default=10)
 args = parser.parse_args()
 
 SKIP_WINDOWS = set()
@@ -46,13 +50,16 @@ def count_lemmas(window):
     return ret
 
 target = []
+target_blocks = []
 target_counts = []
 with open(args.target, 'rb') as fin:
-    for i, window in enumerate(cg3.parse_binary_stream(fin, windows_only=True)):
+    for i, block in enumerate(cg3_score.iter_blocks(fin.read())):
         if i == args.max_sents:
             break
         if i in SKIP_WINDOWS:
             continue
+        target_blocks.append(block)
+        window = cg3.parse_binary_window(block[5:])
         target.append(window)
         target_counts.append(count_lemmas(window))
 
@@ -213,7 +220,7 @@ def gen_rules_window(window_num, cohort_num):
                     if dpos != rpos:
                         # TODO: too strict
                         continue
-                    yield f'SUBSTITUTE ({key}) ({key2}) (*) IF (0 ({t})) {ctx} ;'
+                    yield (f'SUBSTITUTE ({key}) ({key2}) (*) IF (0 ({t})) {ctx} ;', key, key2)
 
 def score_rule(rpath, key, rule):
     with open(rpath, 'w') as fout:
@@ -231,7 +238,22 @@ def score_rule(rpath, key, rule):
         diff += s - base_scores[i]
     return diff, set(windows)
 
-def select_keys():
+CUR_SOURCE = None
+CUR_TARGET = None
+
+def start_rule(gpath, rule):
+    with open(gpath, 'w') as fout:
+        fout.write(RULE_HEADER + rule)
+    return subprocess.Popen(
+        [(args.score_proc or 'ch4_pipe_score/ch4_pipe_score'),
+         gpath, CUR_SOURCE, CUR_TARGET, args.lang],
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+def finish_rule(proc):
+    out, err = proc.communicate()
+    return int(out.decode('utf-8').split()[1])
+
+def select_keys_complex():
     seen = set()
     factor = 1.0
     for key, count in priority.most_common(int(args.lemma_count * factor)):
@@ -244,56 +266,63 @@ def select_keys():
         seen.add(key)
         if len(seen) == args.lemma_count:
             break
-def select_keys_simple():
+def select_keys():
     for key, count in priority.most_common(args.lemma_count):
         yield key
 
 open_mode = 'a' if args.append else 'w'
-with (TemporaryDirectory() as tmpdir,
+with (TemporaryDirectory() as tmpdir_,
       open(args.out, open_mode) as rule_output):
     if args.append:
         rule_output.write('\n')
     else:
         rule_output.write(RULE_HEADER)
 
-    con = sqlite3.connect(os.path.join(tmpdir, 'db.sqlite'))
-    cur = con.cursor()
-    cur.execute('CREATE TABLE rules(key, rule)')
-    con.commit()
+    tmpdir = tmpdir_
+    if args.out_dir:
+        tmpdir = args.out_dir
 
     print('## 0:', sum(base_scores), file=rule_output)
     print('## 0:', sum(base_scores))
 
+    CUR_TARGET = os.path.join(tmpdir, 'target.bin')
+    with open(CUR_TARGET, 'wb') as fout:
+        fout.write(CG_BIN_HEADER + b''.join(target_blocks) + CG_BIN_FOOTER)
+
     for iteration in range(args.iterations):
-        cur.execute('DELETE FROM rules')
-        con.commit()
-        keys = []
-        for key in select_keys():
-            keys.append(key)
-            for w, c in lemma_index[key]:
-                cur.executemany('INSERT INTO rules VALUES(?, ?)',
-                                [(key, r) for r in gen_rules_window(w, c)])
+        CUR_SOURCE = os.path.join(tmpdir, f'input.{iteration}.bin')
+        with open(CUR_SOURCE, 'wb') as fout:
+            fout.write(CG_BIN_HEADER + b''.join(source_blocks) + CG_BIN_FOOTER)
         rules = []
-        for key in keys:
-            cur.execute('SELECT COUNT(*) as ct, key, rule FROM rules WHERE key = ? GROUP BY rule ORDER BY ct DESC LIMIT ?', (key, args.rule_count))
-            rules += cur.fetchall()
+        for key in select_keys():
+            ct = Counter()
+            for batch in itertools.batched(lemma_index[key], args.batch_size):
+                bct = Counter()
+                for w, c in batch:
+                    bct.update(gen_rules_window(w, c))
+                ct.update(dict(bct.most_common(args.rule_count * 2)))
+            rules += ct.most_common(args.rule_count)
         scored_rules = []
-        for i, (c, k, r) in enumerate(rules):
-            fname = f'g_{iteration}_{i}.cg3'
-            path = os.path.join(tmpdir, fname)
-            d, w = score_rule(path, k, r)
-            print(i, d, r)
-            if d < 0:
-                scored_rules.append((d, i, r, w))
+        threshold = sum(base_scores)
+        for batch in itertools.batched(enumerate(rules), args.threads):
+            procs = []
+            for i, ((r, k1, k2), c) in batch:
+                path = os.path.join(tmpdir, f'g_{iteration}_{i}.cg3')
+                procs.append(start_rule(path, r))
+            for (i, ((r, k1, k2), c)), p in zip(batch, procs):
+                s = finish_rule(p)
+                print(i, s, r)
+                if s < threshold:
+                    scored_rules.append((s, i, r, {k1, k2}))
         scored_rules.sort()
         used = set()
         selected = []
-        for d, i, r, w in scored_rules:
-            if w & used:
+        for s, i, r, k in scored_rules:
+            if k & used:
                 continue
             print(r, file=rule_output)
             selected.append(r)
-            used |= w
+            used |= k
         if selected:
             update = os.path.join(tmpdir, f'g_{iteration}.cg3')
             with open(update, 'w') as fout:
