@@ -20,8 +20,8 @@ parser.add_argument('target')
 parser.add_argument('lang')
 parser.add_argument('iterations', type=int)
 parser.add_argument('out')
-parser.add_argument('--rule_count', type=int, default=50)
-parser.add_argument('--lemma_count', type=int, default=20)
+parser.add_argument('--rule_count', type=int, default=100)
+parser.add_argument('--lemma_count', type=int, default=100)
 parser.add_argument('--append', action='store_true')
 parser.add_argument('--max_sents', type=int, default=-1)
 parser.add_argument('--skip_windows', action='store')
@@ -97,6 +97,8 @@ def reload_source(data, initial=False):
                 break
             if i in SKIP_WINDOWS:
                 continue
+            if len(source) == len(target):
+                break
         source_blocks.append(block)
         window = cg3.parse_binary_window(block[5:])
         s, c = score_window(len(source_counts), window)
@@ -293,7 +295,7 @@ with (TemporaryDirectory() as tmpdir_,
         CUR_SOURCE = os.path.join(tmpdir, f'input.{iteration}.bin')
         with open(CUR_SOURCE, 'wb') as fout:
             fout.write(CG_BIN_HEADER + b''.join(source_blocks) + CG_BIN_FOOTER)
-        rules = []
+        rule_counter = Counter()
         for key in select_keys():
             ct = Counter()
             for batch in itertools.batched(lemma_index[key], args.batch_size):
@@ -301,7 +303,8 @@ with (TemporaryDirectory() as tmpdir_,
                 for w, c in batch:
                     bct.update(gen_rules_window(w, c))
                 ct.update(dict(bct.most_common(args.rule_count * 2)))
-            rules += ct.most_common(args.rule_count)
+            rule_counter.update(dict(ct.most_common(args.rule_count)))
+        rules = rule_counter.most_common(args.rule_count)
         scored_rules = []
         threshold = sum(base_scores)
         for batch in itertools.batched(enumerate(rules), args.threads):
