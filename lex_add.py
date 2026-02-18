@@ -22,6 +22,7 @@ UPOS_EXCLUDE = {'DET': 'VERB'}
 parser = argparse.ArgumentParser()
 parser.add_argument('source')
 parser.add_argument('target')
+parser.add_argument('lang')
 parser.add_argument('iterations', type=int)
 parser.add_argument('out')
 parser.add_argument('--rule_count', type=int, default=100)
@@ -30,6 +31,10 @@ parser.add_argument('--append', action='store_true')
 parser.add_argument('--max_sents', type=int, default=-1)
 parser.add_argument('--skip_windows', action='store')
 parser.add_argument('--max_tests', type=int, default=2)
+parser.add_argument('--batch_size', type=int, default=100)
+parser.add_argument('--out_dir', action='store')
+parser.add_argument('--score_proc', action='store')
+parser.add_argument('--threads', type=int, default=10)
 args = parser.parse_args()
 
 SKIP_WINDOWS = set()
@@ -50,20 +55,23 @@ def count_lemmas(window):
     return ret
 
 target = []
+target_blocks = []
 target_counts = []
 with open(args.target, 'rb') as fin:
-    for i, window in enumerate(cg3.parse_binary_stream(fin, windows_only=True)):
+    for i, block in enumerate(cg3_score.iter_blocks(fin.read())):
         if i == args.max_sents:
             break
         if i in SKIP_WINDOWS:
             continue
+        target_blocks.append(block)
+        window = cg3.parse_binary_window(block[5:])
         target.append(window)
         target_counts.append(count_lemmas(window))
 
 def score_window(window_num, window):
     dct = count_lemmas(window)
     a, b = cg3_score.symmetric_difference(dct, target_counts[window_num])
-    ins = len([c for c in window.cohorts if c.static.lemma == '"<ins>"'])
+    #ins = len([c for c in window.cohorts if c.static.lemma == '"<ins>"'])
     #return a + b + ins//2, dct
     return a + b, dct
 
@@ -244,13 +252,30 @@ def score_rule(rpath, key, rule):
             actual_windows.add(i)
     return diff, actual_windows
 
+CUR_SOURCE = None
+CUR_TARGET = None
+
+def start_rule(gpath, rule):
+    with open(gpath, 'w') as fout:
+        fout.write(RULE_HEADER + rule)
+    return subprocess.Popen(
+        [(args.score_proc or 'ch4_pipe_score/ch4_pipe_score'),
+         gpath, CUR_SOURCE, CUR_TARGET, args.lang],
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+def finish_rule(proc):
+    out, err = proc.communicate()
+    return int(out.decode('utf-8').split()[1])
+
 open_mode = 'a' if args.append else 'w'
-with (TemporaryDirectory() as tmpdir,
+with (TemporaryDirectory() as tmpdir_,
       open(args.out, open_mode) as rule_output):
     if args.append:
         rule_output.write('\n')
     else:
         rule_output.write(RULE_HEADER)
+
+    tmpdir = args.out_dir or tmpdir_
 
     skip = set()
 
@@ -286,9 +311,16 @@ with (TemporaryDirectory() as tmpdir,
     print('## 0:', sum(base_scores))
     print(priority.most_common(args.lemma_count))
 
+    CUR_TARGET = os.path.join(tmpdir, 'target.bin')
+    with open(CUR_TARGET, 'wb') as fout:
+        fout.write(CG_BIN_HEADER + b''.join(target_blocks) + CG_BIN_FOOTER)
+
     shift = Counter()
 
     for iteration in range(args.iterations):
+        CUR_SOURCE = os.path.join(tmpdir, f'input.{iteration}.bin')
+        with open(CUR_SOURCE, 'wb') as fout:
+            fout.write(CG_BIN_HEADER + b''.join(source_blocks) + CG_BIN_FOOTER)
         rules = []
         for key, count in priority.most_common(args.lemma_count):
             qs = ', '.join(['?']*len(lemma_index[key]))
@@ -301,27 +333,25 @@ with (TemporaryDirectory() as tmpdir,
                 rules.append((ct, key, f'ADDCOHORT ("<ins>" {key} @dep) BEFORE ({t}) IF (NEGATE c ({key})) {c} ;'))
             print('queried %s in %.5f seconds' % (key, time.time() - t0))
         scored_rules = []
-        for i, (c, k, r) in enumerate(rules):
-            fname = f'g_{iteration}_{i}.cg3'
-            path = os.path.join(tmpdir, fname)
-            d, w = score_rule(path, k, r)
-            print(i, d, r)
-            if d < 0:
-                scored_rules.append((d, i, r, w, k))
-            elif d > len(source):
-                skip.add(r)
+        threshold = sum(base_scores)
+        for batch in itertools.batched(enumerate(rules), args.threads):
+            procs = []
+            for i, (c, k, r) in batch:
+                path = os.path.join(tmpdir, f'g_{iteration}_{i}.cg3')
+                procs.append(start_rule(path, r))
+            for (i, (c, k, r)), p in zip(batch, procs):
+                s = finish_rule(p)
+                print(i, s, r)
+                if s < threshold:
+                    scored_rules.append((s, i, r, k))
         scored_rules.sort()
-        used = set()
         used_keys = set()
         selected = []
-        for d, i, r, w, k in scored_rules:
-            #if w & used:
-            #    continue
+        for d, i, r, k in scored_rules:
             if k in used_keys:
                 continue
             print(r, file=rule_output)
             selected.append(r)
-            used |= w
             used_keys.add(k)
             shift[k] = 0
         if selected:
