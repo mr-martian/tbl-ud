@@ -21,3 +21,6 @@ cat sources/hbo-short-test.conllu | make_hbo > generated/hbo-grc/hbo-macula.test
 cat sources/hbo-short-dev.conllu | make_hbo > generated/hbo-grc/hbo-macula.dev.bin
 cat ~/UD_Ancient_Greek-PTNK/grc_ptnk-ud-test.conllu | make_grc test
 cat ~/UD_Ancient_Greek-PTNK/grc_ptnk-ud-dev.conllu | make_grc dev
+
+mkdir -p generated/hbo-grc/m_cv
+python3 cv_split.py generated/hbo-grc/hbo-macula.train.bin generated/hbo-grc/grc.train.bin generated/hbo-grc/m_cv
