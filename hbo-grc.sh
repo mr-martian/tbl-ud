@@ -8,7 +8,7 @@ make_grc() {
 }
 
 make_hbo() {
-  python3 conllu2apertium.py --surface NOUN:Gender VERB:HebBinyan AUX:HebBinyan DET:PronType PROPN:Gender ExtPos 'LexDomain[SDBH]' 'LId[SDBH]' | lt-proc -O generated/hbo-grc/gloss.bin | sed -E 's|(\^[^/]+/[^<]+)<|\1<SOURCE><|g' | cg-conv -a | vislcg3 --dep-delimit -g rempunct.cg3 --out-binary
+  python3 conllu2apertium.py --surface NOUN:Gender VERB:HebBinyan AUX:HebBinyan DET:PronType PROPN:Gender ExtPos 'LexDomain[SDBH]' 'LId[SDBH]' --skip_ids '31:51|32:33|35:21' | lt-proc -O generated/hbo-grc/gloss.bin | sed -E 's|(\^[^/]+/[^<]+)<|\1<SOURCE><|g' | cg-conv -a | vislcg3 --dep-delimit -g rempunct.cg3 --out-binary
 }
 
 python3 dix_by_gloss.py "$hin" "$gin" -t NOUN:Gender -s NOUN:Gender -s VERB:HebBinyan -s AUX:HebBinyan -s DET:PronType -t DET:PronType -s PROPN:Gender -t PROPN:Gender generated/hbo-grc/gloss.dix

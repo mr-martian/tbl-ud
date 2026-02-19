@@ -21,7 +21,13 @@ def process_feat_list(ls):
 sfeats = process_feat_list(args.sfeats)
 tfeats = process_feat_list(args.tfeats)
 
-def entries(sent, feats, freq):
+def clean_gloss(gloss, is_hbo):
+    if is_hbo:
+        return gloss.lstrip('<').rstrip('>')
+    else:
+        return gloss.lstrip('to-').replace('-', ' ').replace(';', ',')
+
+def entries(sent, feats, freq, is_hbo):
     ret = collections.defaultdict(set)
     for word in utils.conllu_words(sent):
         dct = utils.conllu_feature_dict(word[9], True)
@@ -30,7 +36,9 @@ def entries(sent, feats, freq):
         for f in feats[word[3]]:
             if f in dct:
                 ls.append(dct[f])
-        ret[dct.get('Gloss')].add(tuple(ls))
+        if 'Gloss' in dct:
+            gl = clean_gloss(dct['Gloss'].split('=', 1)[1], is_hbo)
+            ret[gl].add(tuple(ls))
         freq[tuple(ls)] += 1
     return ret
 
@@ -39,7 +47,7 @@ def same_gloss(src, tgt):
         return False
     if tgt == 'to-'+src:
         return True
-    if src in tgt.split(','):
+    if src in [t.strip() for t in tgt.split(',')]:
         return True
     return src == tgt
 
@@ -48,14 +56,38 @@ dix = collections.defaultdict(set)
 lfreq = collections.Counter()
 rfreq = collections.Counter()
 
-for s1, s2 in utils.parallel_sentences(args.source, args.target):
-    d1 = entries(s1, sfeats, lfreq)
-    d2 = entries(s2, tfeats, rfreq)
+SKIP_VERSES = ['31:51', '32:33', '35:21']
+with open(args.source) as fin:
+    source_sents = list(utils.conllu_sentences(fin))
+    source_sents = [s for s in source_sents
+                    if not any(x in s[0] for x in SKIP_VERSES)]
+with open(args.target) as fin:
+    target_sents = list(utils.conllu_sentences(fin))
+
+src_same = set()
+tgt_same = set()
+src_not_same = set()
+tgt_not_same = set()
+for s1, s2 in zip(source_sents, target_sents):
+    d1 = entries(s1, sfeats, lfreq, True)
+    d2 = entries(s2, tfeats, rfreq, False)
+    ss, ts, sns, tns = set(), set(), set(), set()
     for g1 in d1:
+        sns.add(g1)
         for g2 in d2:
+            tns.add(g2)
             if same_gloss(g1, g2):
                 for e1 in d1[g1]:
                     dix[e1].update(d2[g2])
+                ss.add(g1)
+                ts.add(g2)
+    src_same.update(ss)
+    tgt_same.update(ts)
+    src_not_same.update(sns - ss)
+    tgt_not_same.update(tns - ts)
+
+print(src_not_same - src_same)
+print(tgt_not_same - tgt_same)
 
 root = ET.Element('dictionary')
 ET.SubElement(root, 'alphabet')

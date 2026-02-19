@@ -1,4 +1,5 @@
 import argparse
+import re
 import sys
 import utils
 
@@ -7,7 +8,12 @@ parser.add_argument('order', nargs='+')
 parser.add_argument('--count', type=int)
 parser.add_argument('--surface', action='store_true')
 parser.add_argument('--feats_file', action='store')
+parser.add_argument('--skip_ids', action='store')
 args = parser.parse_args()
+
+skip_pat = None
+if args.skip_ids:
+    skip_pat = re.compile(args.skip_ids)
 
 def order(upos):
     for key in args.order:
@@ -24,6 +30,8 @@ def escape(w):
     return w.replace('/', '\\/').replace('<', '\\<')
 
 for idx, sent in enumerate(utils.conllu_sentences(sys.stdin), 1):
+    if skip_pat is not None and skip_pat.search(sent[0]):
+        continue
     line = []
     for word in utils.conllu_words(sent):
         feats = utils.conllu_feature_dict(word[5], with_prefix=True)
