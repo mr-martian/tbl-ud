@@ -21,7 +21,7 @@ parser.add_argument('lang')
 parser.add_argument('iterations', type=int)
 parser.add_argument('out')
 parser.add_argument('--rule_count', type=int, default=100)
-parser.add_argument('--lemma_count', type=int, default=100)
+parser.add_argument('--pos_count', type=int, default=20)
 parser.add_argument('--append', action='store_true')
 parser.add_argument('--max_sents', type=int, default=-1)
 parser.add_argument('--skip_windows', action='store')
@@ -239,8 +239,11 @@ def gen_rules_window(window_num):
                 extra = set((src[dr][f] - tgt[dr][f]).keys())
                 remove = extra & have
                 add = missing - have
-                pairs = [('*', t) for t in add]
-                pairs += [(t, '*') for t in remove]
+                pairs = []
+                if not remove:
+                    pairs += [('*', t) for t in add]
+                if not add:
+                    pairs += [(t, '*') for t in remove]
                 for a in add:
                     for r in remove:
                         pairs.append((r, a))
@@ -292,25 +295,44 @@ with (TemporaryDirectory() as tmpdir_,
     with open(CUR_TARGET, 'wb') as fout:
         fout.write(CG_BIN_HEADER + b''.join(target_blocks) + CG_BIN_FOOTER)
 
+    skip_next = set()
+    skip_count = Counter()
+    skip_entirely = set()
+
     for iteration in range(args.iterations):
         CUR_SOURCE = os.path.join(tmpdir, f'input.{iteration}.bin')
         with open(CUR_SOURCE, 'wb') as fout:
             fout.write(CG_BIN_HEADER + b''.join(source_blocks) + CG_BIN_FOOTER)
-        rule_counter = Counter()
+        rule_counter = defaultdict(Counter)
+        pos_counter = Counter()
         for batch in itertools.batched(range(len(source)), args.batch_size):
-            ct = Counter()
+            pct = Counter()
+            rct = defaultdict(Counter)
             for window_num in batch:
-                ct.update(gen_rules_window(window_num))
-            rule_counter.update(dict(ct.most_common(args.rule_count * 2)))
-        rules = rule_counter.most_common(args.rule_count)
+                for r, p in gen_rules_window(window_num):
+                    if p in skip_entirely or p in skip_next:
+                        continue
+                    pct[p] += 1
+                    rct[p][r] += 1
+            for p, _ in pct.most_common(args.pos_count * 2):
+                mc = rct[p].most_common(args.rule_count * 2)
+                mc = mc[(skip_count[p]*(args.rule_count>>1)):]
+                ct = Counter(dict(mc))
+                rule_counter[p].update(ct)
+                pos_counter[p] += ct.total()
+        rules = []
+        tested_keys = set()
+        for p, _ in pos_counter.most_common(args.pos_count):
+            rules += [(r, p, c) for r, c in
+                      rule_counter[p].most_common(args.rule_count)]
         scored_rules = []
         threshold = sum(base_scores)
         for batch in itertools.batched(enumerate(rules), args.threads):
             procs = []
-            for i, ((r, k), c) in batch:
+            for i, (r, k, c) in batch:
                 path = os.path.join(tmpdir, f'g_{iteration}_{i}.cg3')
                 procs.append(start_rule(path, r))
-            for (i, ((r, k), c)), p in zip(batch, procs):
+            for (i, (r, k, c)), p in zip(batch, procs):
                 s = finish_rule(p)
                 print(i, s, r)
                 if s < threshold:
@@ -324,6 +346,11 @@ with (TemporaryDirectory() as tmpdir_,
             print(r, file=rule_output)
             selected.append(r)
             used.add(k)
+        skip_next = tested_keys - used
+        for k in skip_next:
+            skip_count[k] += 1
+            if skip_count[k] >= 3:
+                skip_entirely.add(k)
         if selected:
             update = os.path.join(tmpdir, f'g_{iteration}.cg3')
             with open(update, 'w') as fout:
