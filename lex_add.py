@@ -321,6 +321,9 @@ with (TemporaryDirectory() as tmpdir_,
         CUR_SOURCE = os.path.join(tmpdir, f'input.{iteration}.bin')
         with open(CUR_SOURCE, 'wb') as fout:
             fout.write(CG_BIN_HEADER + b''.join(source_blocks) + CG_BIN_FOOTER)
+        for key, count in shift.items():
+            if count >= 3 and key in priority:
+                del priority[key]
         rules = []
         for key, count in priority.most_common(args.lemma_count):
             qs = ', '.join(['?']*len(lemma_index[key]))
