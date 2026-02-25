@@ -1,0 +1,7 @@
+DELIMITERS = "<$$$>" ;
+
+SETPARENT (*) (pp _TARGET_) TO (@0 (*)) ;
+
+SETPARENT SAFE (*) TO (@0 (*)) ;
+
+SETPARENT (*) (@0 (*) LINK c _TARGET_) TO (llls (*)) ;

@@ -28,6 +28,8 @@ parser.add_argument('--max_sents', type=int, default=-1)
 parser.add_argument('--skip_windows', action='store')
 parser.add_argument('--max_tests', type=int, default=2)
 parser.add_argument('--batch_size', type=int, default=100)
+parser.add_argument('--out_dir', action='store')
+parser.add_argument('--score_proc', action='store')
 parser.add_argument('--threads', type=int, default=10)
 args = parser.parse_args()
 
@@ -237,22 +239,24 @@ def start_rule(prefix, rule):
         fout.write(CG_BIN_HEADER + b''.join(source_blocks) + CG_BIN_FOOTER)
     with open(tpath, 'wb') as fout:
         fout.write(CG_BIN_HEADER + b''.join(target_blocks) + CG_BIN_FOOTER)
-    return subprocess.Popen(['ch4_pipe_score/ch4_pipe_score', gpath, spath, tpath,
-                             args.lang],
-                            stdout=subprocess.PIPE,
-                            stderr=subprocess.PIPE)
+    return subprocess.Popen(
+        [(args.score_proc or 'ch4_pipe_score/ch4_pipe_score'),
+         gpath, spath, tpath, args.lang],
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
 def finish_rule(proc):
     out, err = proc.communicate()
     return int(out.decode('utf-8').split()[1])
 
 open_mode = 'a' if args.append else 'w'
-with (TemporaryDirectory() as tmpdir,
+with (TemporaryDirectory() as tmpdir_,
       open(args.out, open_mode) as rule_output):
     if args.append:
         rule_output.write('\n')
     else:
         rule_output.write(RULE_HEADER)
+
+    tmpdir = args.out_dir or tmpdir_
 
     print('## 0:', sum(base_scores), file=rule_output)
     print('## 0:', sum(base_scores))

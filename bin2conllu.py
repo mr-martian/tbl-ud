@@ -14,9 +14,9 @@ for sid, window in enumerate(cg3.parse_binary_stream(sys.stdin.buffer, windows_o
         cols[2] = rd.lemma[1:-1]
         cols[3] = rd.tags[0]
         cols[5] = '|'.join(t for t in rd.tags if '=' in t) or '_'
-        cols[6] = str(ids[cohort.dep_self])
+        cols[6] = str(ids[cohort.dep_parent])
         at = [t for t in rd.tags if t[0] == '@']
         if at:
-            cols[7] = at[0]
+            cols[7] = at[0].lstrip('@')
         print('\t'.join(cols))
     print()
