@@ -10,7 +10,7 @@ import subprocess
 import time
 from tempfile import TemporaryDirectory
 
-RULE_HEADER = 'DELIMITERS = "<$$$>" ;\nPROTECT (SOURCE) ;\n\n'
+RULE_HEADER = 'DELIMITERS = "<$$$>" ;\n\n'
 
 CG_BIN_HEADER = b'CGBF\x01\x00\x00\x00'
 CG_BIN_FOOTER = b'\x02\x01\x02\x02' # FLUSH, EXIT
