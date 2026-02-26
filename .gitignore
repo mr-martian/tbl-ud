@@ -15,6 +15,7 @@ callgrind*
 !rempunct.cg3
 !segment_eng.cg3
 ch4_score/ch4_score
+ch4_pipe_score/ch4_pipe_score
 cv_data
 *.lin
 ud-treebanks-v2.17
