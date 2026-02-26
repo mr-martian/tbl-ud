@@ -112,9 +112,12 @@ def score_output(buf, mode):
     scores[f'PER_lemma ({mode})'].append(pl)
     scores[f'PER_form ({mode})'].append(pf)
 
+bounds = []
 with tempfile.TemporaryDirectory() as tmpdir:
     n = 0
     for grammar in args.grammars:
+        if n != 0:
+            bounds.append(n)
         with open(grammar) as fin:
             header = None
             cur = []
@@ -152,5 +155,7 @@ for key in scores:
         mx = max(vals)
         vals = [100 * float(v) / mx for v in vals]
     axs.plot(range(len(vals)), vals, label=key)
+for n in bounds:
+    axs.axvline(n)
 axs.legend()
 plt.savefig(args.out)

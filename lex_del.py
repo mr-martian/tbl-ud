@@ -95,7 +95,7 @@ def reload_source(data, initial=False):
     global source, source_blocks, lemma_index, source_lemmas, extra, source_counts, source_maps, base_scores
     source = []
     source_blocks = []
-    lemma_index = defaultdict(list)
+    lemma_index = defaultdict(set)
     source_lemmas = []
     ambiguity = Counter()
     source_counts = []
@@ -128,8 +128,8 @@ def reload_source(data, initial=False):
                     feats.add((reading.tags[0], ''))
                     feats.update((reading.tags[0], f)
                                  for f in get_feats(reading))
+                lemma_index[desc_r(reading)].add((loc, j))
             cur.append((key, rel, feats))
-            lemma_index[key].append((loc, j))
         source.append(window)
         source_lemmas.append(cur)
         s, c = score_window(loc, window)
@@ -257,9 +257,12 @@ with (TemporaryDirectory() as tmpdir_,
             fout.write(CG_BIN_HEADER + b''.join(source_blocks) + CG_BIN_FOOTER)
         for key in exclude:
             extra[key] = 0
+        ops = [(int(100 * c / max(len(lemma_index[k]), 1)), c, k)
+                for k, c in extra.items() if c > 0]
+        ops.sort(reverse=True)
         freq = Counter()
-        for key, count in extra.most_common(args.lemma_count):
-            print(key, count)
+        for rate, count, key in ops:
+            print(key, count, rate)
             t0 = time.time()
             ct = Counter()
             for batch in itertools.batched(lemma_index[key], args.batch_size):
