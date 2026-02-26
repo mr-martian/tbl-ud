@@ -3,7 +3,7 @@ import sys
 
 for sid, window in enumerate(cg3.parse_binary_stream(sys.stdin.buffer, windows_only=True), 1):
     print(f'# sent_id = s{sid}')
-    ids = {0: 0}
+    ids = {0: 0, None: 0}
     for i, cohort in enumerate(window.cohorts, 1):
         ids[cohort.dep_self] = i
     for cohort in window.cohorts:
