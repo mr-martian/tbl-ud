@@ -200,9 +200,12 @@ def get_context(window_num, cohort_num):
         paths.append(('c', c))
         for cc in children[c]:
             paths.append(('c', c, 'c', cc))
+    options = set()
+    for pth in paths:
+        options.update(list(desc_link(pth)))
     for n in range(1, args.max_tests + 1):
-        for seq in itertools.combinations(paths, n):
-            yield from itertools.product(*[desc_link(p) for p in seq])
+        for seq in itertools.combinations(options, n):
+            yield ' '.join(sorted(seq))
 
 def gen_rules_window(window_num, cohort_num):
     src = source_counts[window_num]
@@ -211,8 +214,7 @@ def gen_rules_window(window_num, cohort_num):
     locs, parents, siblings, children = map_window(window_num)
     key, deprel, feats = source_lemmas[window_num][cohort_num]
     if key is not None and not children[cohort.dep_self]:
-        for ctx_ls in get_context(window_num, cohort_num):
-            ctx = ' '.join(ctx_ls)
+        for ctx in get_context(window_num, cohort_num):
             yield f'REMCOHORT ({key}) IF (NEGATE c (*)) {ctx} ;'
 
 CUR_SOURCE = None
@@ -261,7 +263,7 @@ with (TemporaryDirectory() as tmpdir_,
                 for k, c in extra.items() if c > 0]
         ops.sort(reverse=True)
         freq = Counter()
-        for rate, count, key in ops:
+        for rate, count, key in ops[:args.lemma_count]:
             print(key, count, rate)
             t0 = time.time()
             ct = Counter()
@@ -285,7 +287,8 @@ with (TemporaryDirectory() as tmpdir_,
             for (i, ((k, r), c)), proc in zip(batch, procs):
                 s = finish_rule(proc)
                 print(i, s, r)
-                if s < threshold:
+                if (threshold - s) > (c / 2):
+                #if s < threshold:
                     ok_keys.add(k)
                     scored_rules.append((s, i, r,
                                          set([(x[0], k)
