@@ -7,32 +7,35 @@ conllu=ud-treebanks-v2.17/UD_Ancient_Greek-PTNK/grc_ptnk-ud-train.conllu
 prefix="cv_data/${dir}"
 src_conllu="${prefix}/train.src.conllu"
 
-#python3 ch6_rearrange_conllu.py "$conllu" "${prefix}/train.tgt.conllu"
+python3 ch6_rearrange_conllu.py "$conllu" "${prefix}/train.tgt.conllu"
 
 add_segment() {
   i=$1
   train="${prefix}/not${i}.conllu"
   train_bin="${prefix}/not${i}.bin"
   python3 ch6_rearrange_conllu.py "$conllu" "$train" --skip_fold $i
-  head -c8 "${prefix}/0.bin" > "$train_bin"
+  #head -c8 "${prefix}/0.bin" > "$train_bin"
+  head -c8 "${prefix}/del.0.bin" > "$train_bin"
   for j in $(seq 0 4)
   do
     if [[ $i != $j ]]; then
-      tail -c+9 "${prefix}/${j}.bin" >> "$train_bin"
+      #tail -c+9 "${prefix}/${j}.bin" >> "$train_bin"
+      tail -c+9 "${prefix}/del.${j}.bin" >> "$train_bin"
     fi
   done
   python3 train_word_lin.py "$train_bin" "$train" "${prefix}/${i}.lin" --iterations 500 --count 200 > "${prefix}/${i}.train.log"
-  python3 linearize.py "${prefix}/${i}.lin" "${prefix}/${i}.bin" --format conllu >> "$src_conllu"
+  #python3 linearize.py "${prefix}/${i}.lin" "${prefix}/${i}.bin" --format conllu >> "$src_conllu"
+  python3 linearize.py "${prefix}/${i}.lin" "${prefix}/del.${i}.bin" --format conllu >> "$src_conllu"
 }
 
-#rm -f "$src_conllu"
-#add_segment 0 &
-#add_segment 1 &
-#add_segment 2 &
-#add_segment 3 &
-#add_segment 4 &
+rm -f "$src_conllu"
+add_segment 0 &
+add_segment 1 &
+add_segment 2 &
+add_segment 3 &
+add_segment 4 &
 
-#wait `jobs -p`
+wait `jobs -p`
 
 source ./env/bin/activate
 

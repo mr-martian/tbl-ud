@@ -279,7 +279,11 @@ with (TemporaryDirectory() as tmpdir_,
 
     skip = set()
 
-    con = sqlite3.connect(os.path.join(tmpdir, 'db.sqlite'))
+    sql_path = os.path.join(tmpdir, 'db.sqlite')
+    if os.path.exists(sql_path):
+        os.remove(sql_path)
+
+    con = sqlite3.connect(sql_path)
     cur = con.cursor()
     cur.execute('CREATE TABLE context(window, upos, target, ctx)')
     #cur.execute('CREATE INDEX blah ON context(target, ctx)')
