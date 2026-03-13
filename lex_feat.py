@@ -243,8 +243,8 @@ def gen_rules_window(window_num):
                 pairs = []
                 if not remove:
                     pairs += [('*', t) for t in add]
-                if not add:
-                    pairs += [(t, '*') for t in remove]
+                #if not add:
+                #    pairs += [(t, '*') for t in remove]
                 for a in add:
                     for r in remove:
                         pairs.append((r, a))
