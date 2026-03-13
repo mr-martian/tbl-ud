@@ -273,7 +273,9 @@ score_buffer :: proc(src: []byte, tgt: []byte, opt: Options) -> (score: int) {
 	score += abs(val)
     }
     for key, val in feat_counts {
-	score += abs(val)
+        if val < 0 {
+	        score += abs(val)
+        }
     }
     return
 }

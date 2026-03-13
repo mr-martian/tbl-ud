@@ -98,7 +98,8 @@ with open(args.target, 'rb') as fin:
 def score_window(window_num, window):
     dct = count_lemmas(window)
     a, b = cg3_score.symmetric_difference(dct, target_counts[window_num])
-    return a + b, dct
+    #return a + b, dct
+    return b, dct
 
 source = []
 source_blocks = []
