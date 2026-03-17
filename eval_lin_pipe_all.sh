@@ -23,3 +23,5 @@ do
     echo "$folder"
     bash eval_lin_pipe.sh generated/blx/hbo.blx.dev.bin generated/blx "$folder" > "${folder}/eval_lin_pipe.log" &
 done
+
+wait `jobs -p`
