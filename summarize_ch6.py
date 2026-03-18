@@ -5,8 +5,13 @@ with_rules = defaultdict(list)
 no_rules = defaultdict(list)
 
 for fname in glob.glob('cv_data/*/dev.*.eval.log'):
-    dix = 'Gloss' if '_g_' in fname else 'MACULA'
+    dix = 'Gloss' if '_g_' in fname or '_g/' in fname else 'MACULA'
     tmpl = 'Strict' if '13' in fname else 'Loose'
+    if 'pipe' in fname:
+        tmpl = 'Pipeline'
+    if 'baseline' in fname:
+        dix = 'Baseline'
+        tmpl = ''
     align = None
     if 'eflomal' in fname:
         align = 'Eflomal'

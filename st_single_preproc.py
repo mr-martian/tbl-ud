@@ -50,6 +50,8 @@ def blocks(grammar):
         yield n, cur
 
 def eval_grammar(tmpdir, grammar):
+    if os.path.exists(grammar+'.log.json'):
+        return
     out = os.path.join(tmpdir, os.path.basename(grammar))
     x = []
     y_lem = []

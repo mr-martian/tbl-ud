@@ -3,8 +3,11 @@
 function prepare_data() {
     dir_name="$1"
     infile="$2"
-    vislcg3 -g "cv_data/${dir_name}/plain.cg3" -I "$infile" -O "cv_data/${dir_name}/dev.plain.bin" --in-binary --out-binary
-    python3 linearize.py "cv_data/${dir_name}/r200.lin" "cv_data/${dir_name}/dev.plain.bin" --format cg | cg-conv -Z --dep-delimit > "cv_data/${dir_name}/dev.plain-lin.bin"
+    raw_bin="cv_data/${dir_name}/dev.plain.bin"
+    if [[ ! -f "$raw_bin" ]]; then
+      vislcg3 -g "cv_data/${dir_name}/plain.cg3" -I "$infile" -O "$raw_bin" --in-binary --out-binary
+    fi
+    python3 linearize.py "cv_data/${dir_name}/r200.lin" "$raw_bin" --format cg | cg-conv -Z --dep-delimit > "cv_data/${dir_name}/dev.plain-lin.bin"
 }
 
 ref_conllu=ud-treebanks-v2.17/UD_Ancient_Greek-PTNK/grc_ptnk-ud-dev.conllu
@@ -44,10 +47,10 @@ function run_folder() {
     name=`basename "$1"`
     infile="$2"
     echo "$name"
-    #prepare_data "$name" "$infile"
-    #project_and_eval "$name" feat
-    #project_and_eval "$name" eflomal
-    #project_and_eval "$name" eflomal_feat
+    prepare_data "$name" "$infile"
+    project_and_eval "$name" feat
+    project_and_eval "$name" eflomal
+    project_and_eval "$name" eflomal_feat
     project_and_eval_raw "$name" feat
     project_and_eval_raw "$name" eflomal
     project_and_eval_raw "$name" eflomal_feat
@@ -59,9 +62,14 @@ function run_folder() {
 #    run_folder "$folder" generated/hbo-grc/hbo-macula.dev.bin &
 #done
 
-for folder in cv_data/jk_*_g_*
-do
-    run_folder "$folder" generated/hbo-grc/hbo.dev.bin &
-done
+#for folder in cv_data/jk_*_g_*
+#do
+#    run_folder "$folder" generated/hbo-grc/hbo.dev.bin &
+#done
+
+#run_folder baseline blah
+
+run_folder jk_pipe_grc_g &
+run_folder jk_pipe_grc_m &
 
 wait `jobs -p`

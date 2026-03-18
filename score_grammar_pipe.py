@@ -54,7 +54,8 @@ def loss(window, tlc, tfc):
     slc, sfc = count_lemmas(window)
     al, bl = cg3_score.symmetric_difference(slc, tlc)
     af, bf = cg3_score.symmetric_difference(sfc, tfc)
-    return al + bl, af + bf
+    #return al + bl, af + bf
+    return al + bl, bf
 
 train_windows = [cg3.parse_binary_window(tb[5:])
                  for i, tb in enumerate(cg3_score.iter_blocks(train_tgt))
