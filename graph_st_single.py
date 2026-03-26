@@ -29,7 +29,7 @@ for grammar in args.grammars:
         grams.append((os.path.basename(grammar), yl[-1], yf[-1]))
 a_lem.axhline(args.per_lem, color='tab:orange')
 a_form.axhline(args.per_form, color='tab:orange')
-plt.savefig(args.out)
+plt.savefig(args.out, bbox_inches='tight', pad_inches=0.1)
 print(f'{args.per_lem:.2f} & {args.per_form:.2f} & {min(lv):.2f} & {min(fv):.2f}')
 grams.sort(key=lambda x: x[1])
 print('%s\t%0.2f\t%0.2f' % grams[0])

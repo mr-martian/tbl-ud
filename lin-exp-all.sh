@@ -10,22 +10,24 @@ function run_settings() {
 }
 
 echo "Tree"
-run_settings jap 50 tree
-run_settings jap 100 tree
-run_settings jap 200 tree
-run_settings tur 50 tree
-run_settings tur 100 tree
-run_settings tur 200 tree
-run_settings sjo 50 tree
-run_settings sjo 100 tree
-run_settings sjo 200 tree
+run_settings jap 50 tree &
+run_settings jap 100 tree &
+run_settings jap 200 tree &
+run_settings tur 50 tree &
+run_settings tur 100 tree &
+run_settings tur 200 tree &
+run_settings sjo 50 tree &
+run_settings sjo 100 tree &
+run_settings sjo 200 tree &
+wait `jobs -p`
 echo "Word"
-run_settings jap 50 word
-run_settings jap 100 word
-run_settings jap 200 word
-run_settings tur 50 word
-run_settings tur 100 word
-run_settings tur 200 word
-run_settings sjo 50 word
-run_settings sjo 100 word
-run_settings sjo 200 word
+run_settings jap 50 word &
+run_settings jap 100 word &
+run_settings jap 200 word &
+run_settings tur 50 word &
+run_settings tur 100 word &
+run_settings tur 200 word &
+run_settings sjo 50 word &
+run_settings sjo 100 word &
+run_settings sjo 200 word &
+wait `jobs -p`
