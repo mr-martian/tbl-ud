@@ -1,0 +1,117 @@
+<!doctype html>
+<html>
+  <head>
+    <title>Review word alignments for {{sent_id}}</title>
+    <meta charset="utf-8"/>
+    <style>
+      table, tr {
+	  width: 100%;
+      }
+      tr {
+	  justify-content: space-evenly;
+      }
+      td {
+	  text-align: center;
+	  min-width: 4em;
+      }
+      input {
+	  width: 4em;
+      }
+      #hbo_words > td {
+	  //min-width: 5em;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>{{sent_id}} ({{sid}} / 1576)</h1>
+    <form method="post">
+      <table>
+	<tr id="grc_words">
+	  {% for word in grc %}
+	  <td id="g{{loop.index0}}">
+	    {{loop.index0}}<br/>
+	    {{word.form}}<br/>
+	    {{word.lemma}}
+	  </td>
+	  {% endfor %}
+	</tr>
+      </table>
+      <svg id="canvas" height="100">
+	{% for word in hbo %}
+	<line id="l{{loop.index0}}" stroke="black"></line>
+	{% endfor %}
+      </svg>
+      <table>
+	<tr id="hbo_words">
+	  {% for word in hbo %}
+	  <td id="h{{loop.index0}}">
+	    {{loop.index0}}<br/>
+	    {{word.form}}<br/>
+	    {{word.lemma}}
+	  </td>
+	  {% endfor %}
+	</tr>
+	<tr>
+	  {% for val in align %}
+	  <td>
+	    <input
+	      type="number"
+	      value="{{val}}"
+	      name="w{{loop.index0}}"
+	      id="w{{loop.index0}}"
+	      onchange="edit_line({{loop.index0}})">
+	    </input>
+	  </td>
+	  {% endfor %}
+	</tr>
+      </table>
+      <input type="checkbox" name="skip" id="skip"></input>
+      <label for="skip">Partially misalligned</label>
+      <br/>
+      <input type="hidden" name="sid" value="{{sid}}"></input>
+      <button type="submit">Save and Continue</button>
+    </form>
+    <script type="text/javascript">
+      var hbo_points = [];
+      var grc_points = [];
+      function edit_line(index) {
+	  console.log('w'+index)
+	  console.log(document.getElementById('w'+index))
+	  let tgt = document.getElementById('w'+index).value;
+	  let hx = hbo_points[index];
+	  let line = document.getElementById('l'+index);
+	  line.setAttribute('x2', hx)
+	  line.setAttribute('y2', '95')
+	  if (tgt) {
+	      let gx = grc_points[parseInt(tgt)];
+	      line.setAttribute('x1', gx)
+	      line.setAttribute('y1', '5')
+	  } else {
+	      line.setAttribute('x1', hx)
+	      line.setAttribute('y1', '95')
+	  }
+      }
+      function centerx(td, offset) {
+	  let rect = td.getBoundingClientRect();
+	  console.log(td, rect, offset)
+	  return rect.x + (rect.width / 2) - offset;
+      }
+      function get_points(parent, offset) {
+	  return Array.from(
+	      document.getElementById(parent).children).map(
+		  (td) => centerx(td, offset));
+      }
+      function setup() {
+	  let offset = document.getElementById('hbo_words').getBoundingClientRect().x;
+	  hbo_points = get_points('hbo_words', offset);
+	  grc_points = get_points('grc_words', offset);
+	  document.getElementById('canvas').setAttribute(
+	      'width', (Math.max(...hbo_points, ...grc_points) + 20))
+	  for (let i = 0; i < hbo_points.length; i++) {
+	      edit_line(i);
+	  }
+      }
+      window.addEventListener('load', setup);
+    </script>
+  </body>
+</html>
