@@ -1,0 +1,48 @@
+<!doctype html>
+<html>
+  <head>
+    <title>manual-dix transfer overview</title>
+    <style>
+      ins {
+	        text-decoration: none;
+	        color: green;
+      }
+      del {
+	        text-decoration: none;
+	        color: red;
+      }
+      td:nth-child(odd) {
+          border-right: 1px solid black;
+      }
+    </style>
+  </head>
+  <body>
+    <form action="/checkpoint" method="POST">
+      <button type="submit">Save Checkpoint</button>
+    </form>
+    <table>
+      <tr>
+	      <th>Sentence</th>
+	      <th colspan="2">{{first_cp}}</th>
+	      <th colspan="2">{{last_cp}}</th>
+	      <th colspan="2">Current</th>
+      </tr>
+      <tr>
+	      <th></th>
+	      <th>lemma</th>
+	      <th>form</th>
+	      <th>lemma</th>
+	      <th>form</th>
+	      <th>lemma</th>
+	      <th>form</th>
+      </tr>
+      {% for row in rows %}
+      <tr>
+	      {% for item in row %}
+	      <td>{{item|safe}}</td>
+	      {% endfor %}
+      </tr>
+      {% endfor %}
+    </table>
+  </body>
+</html>

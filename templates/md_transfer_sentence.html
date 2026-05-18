@@ -1,0 +1,50 @@
+<!doctype html>
+<html>
+  <head>
+    <title>manual-dix transfer sentence {{sent_id}}</title>
+    <style>
+      .error {
+	  color: red;
+      }
+      li:has(span.error) {
+	  background-color: yellow;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Sentence {{sent_id}}</h1>
+    <table>
+      <tr>
+	<th>Source</th>
+	<th>Target</th>
+      </tr>
+      <tr>
+	{% for window in windows %}
+	<td>
+	  <ol>
+	    {% for cohort, label in window %}
+	    <li>
+	      <span class="reading">{{cohort.static.lemma}}
+		{% for tag in cohort.static.tags %}
+		{{tag}}
+		{% endfor %}
+		{{label|safe}}
+	      </span>
+	      <ul>
+		{% for reading in cohort.readings %}
+		<li class="reading">{{reading.lemma}}
+		{% for tag in reading.tags %}
+		{{tag}}
+		{% endfor %}
+		</li>
+		{% endfor %}
+	      </ul>
+	    </li>
+	    {% endfor %}
+	  </ol>
+	</td>
+	{% endfor %}
+      </tr>
+    </table>
+  </body>
+</html>
