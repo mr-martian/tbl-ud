@@ -6,14 +6,16 @@ shuf_lang="$3"
 mode="$4"
 
 if [[ "$shuf_lang" == "jap" ]]; then
-    shuf_gram=lin-exp-data/ja_pud-ud-test.conllu.lin
+  shuf_gram=lin-exp-data/ja_pud-ud-test.conllu.lin
 elif [[ "$shuf_lang" == "tur" ]]; then
-    shuf_gram=lin-exp-data/tr_pud-ud-test.conllu.lin
+  shuf_gram=lin-exp-data/tr_pud-ud-test.conllu.lin
 elif [[ "$shuf_lang" == "sjo" ]]; then
-    shuf_gram=lin-exp-data/sjo_xdt-ud-test.conllu.lin
+  shuf_gram=lin-exp-data/sjo_xdt-ud-test.conllu.lin
+elif [[ "$shuf_lang" == "null" ]]; then
+  shuf_gram=empty.lin
 else
-    echo "unknown language '$shuf_lang'"
-    exit 1
+  echo "unknown language '$shuf_lang'"
+  exit 1
 fi
 
 if [[ "$mode" == "tree" ]]; then

@@ -22,9 +22,11 @@ def PER(source, target, target_features=None, skip_windows=None):
     twords = 0
     lcorrect = 0
     fcorrect = 0
+    ct = 0
     for idx, (sw, tw) in enumerate(zip(source, target)):
         if skip_windows and idx in skip_windows:
             continue
+        ct += 1
         swords += len(sw.cohorts)
         twords += len(tw.cohorts)
         sl = Counter(PER_readings(sw, False))

@@ -89,9 +89,9 @@ def score_output(buf, mode):
             continue
         elif mode == 'train' and i in TRAIN_SKIP:
             continue
-        elif mode == 'dev' and i >= len(dev_data):
+        elif mode == 'dev' and n >= len(dev_data):
             break
-        elif mode == 'train' and i >= len(train_data):
+        elif mode == 'train' and n >= len(train_data):
             break
         tgt = train_data[n] if mode == 'train' else dev_data[n]
         w = cg3.parse_binary_window(block[5:])
