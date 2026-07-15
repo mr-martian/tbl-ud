@@ -27,7 +27,7 @@ def order(upos):
 all_feats = set()
 
 def escape(w):
-    return w.replace('/', '\\/').replace('<', '\\<')
+    return w.replace('/', '\\/').replace('<', '\\<').replace('$', '\\$')
 
 for idx, sent in enumerate(utils.conllu_sentences(sys.stdin), 1):
     if skip_pat is not None and skip_pat.search(sent[0]):

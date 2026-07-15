@@ -1,13 +1,18 @@
 from collections import Counter, defaultdict
 
-def PER_readings(window, with_features, target_features=None):
+def PER_readings(window, with_features, target_features=None,
+                 collect_target_features=None):
     for cohort in window.cohorts:
         for reading in cohort.readings:
             if 'SOURCE' in reading.tags:
                 continue
             if with_features:
                 if target_features is None:
-                    yield frozenset([reading.lemma] + reading.tags)
+                    tags = [t for t in reading.tags if '=' in t]
+                    yield frozenset([reading.lemma, reading.tags[0]] + tags)
+                    if collect_target_features is not None:
+                        collect_target_features.update([
+                            t.split('=')[0] for t in tags])
                 else:
                     ls = [reading.lemma, reading.tags[0]]
                     for t in reading.tags:
@@ -32,8 +37,9 @@ def PER(source, target, target_features=None, skip_windows=None):
         sl = Counter(PER_readings(sw, False))
         tl = Counter(PER_readings(tw, False))
         lcorrect += (sl & tl).total()
-        sf = Counter(PER_readings(sw, True, target_features))
-        tf = Counter(PER_readings(tw, True, target_features))
+        feats = set()
+        tf = Counter(PER_readings(tw, True, collect_target_features=feats))
+        sf = Counter(PER_readings(sw, True, target_features=feats))
         fcorrect += (sf & tf).total()
     deletions = max(0, swords - twords)
     return (100 * (1 - float(lcorrect - deletions)/twords),

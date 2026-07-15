@@ -14,6 +14,7 @@ Options :: struct {
     tgt: string `args:"pos=2,required" usage:"input path"`,
     target_lang: string `args:"pos=3,required" usage:"target lang code"`,
     count_feats: bool,
+    include_missing: bool,
     output: string,
 }
 
@@ -21,6 +22,9 @@ LANG :: enum {
     BLX,
     ENG,
     GRC,
+    PUDENG,
+    PUDPOR,
+    PUDGLG,
 }
 
 CURRENT_LANG := LANG.ENG
@@ -115,6 +119,100 @@ is_feat :: proc(buf: string) -> bool {
 	    return (strings.starts_with(buf, "VerbForm=") ||
 		    strings.starts_with(buf, "Voice="))
 	}
+    case .PUDENG:
+        switch buf[0] {
+        case 'A':
+            return strings.starts_with(buf, "Abbr=")
+        case 'C':
+            return strings.starts_with(buf, "Case=")
+        case 'D':
+            return (strings.starts_with(buf, "Definite=") ||
+                    strings.starts_with(buf, "Degree="))
+        case 'E':
+            return strings.starts_with(buf, "ExtPos=")
+        case 'F':
+            return strings.starts_with(buf, "Foreign=")
+        case 'G':
+            return strings.starts_with(buf, "Gender=")
+        case 'M':
+            return strings.starts_with(buf, "Mood=")
+        case 'N':
+            return (strings.starts_with(buf, "Number=") ||
+                    strings.starts_with(buf, "NumForm=") ||
+                    strings.starts_with(buf, "NumType="))
+        case 'P':
+            return (strings.starts_with(buf, "Person=") ||
+                    strings.starts_with(buf, "Polarity=") ||
+                    strings.starts_with(buf, "Poss=") ||
+                    strings.starts_with(buf, "PronType="))
+        case 'R':
+            return strings.starts_with(buf, "Reflex=")
+        case 'S':
+            return strings.starts_with(buf, "Style=")
+        case 'T':
+            return (strings.starts_with(buf, "Tense=") ||
+                    strings.starts_with(buf, "Typo="))
+        case 'V':
+            return strings.starts_with(buf, "VerbForm=")
+        }
+    case .PUDPOR:
+        switch buf[0] {
+        case 'C':
+            return strings.starts_with(buf, "Case=")
+        case 'D':
+            return strings.starts_with(buf, "Definite=")
+        case 'F':
+            return strings.starts_with(buf, "Foreign=")
+        case 'G':
+            return strings.starts_with(buf, "Gender=")
+        case 'M':
+            return strings.starts_with(buf, "Mood=")
+        case 'N':
+            return (strings.starts_with(buf, "Number=") ||
+                    strings.starts_with(buf, "Number[psor]="))
+        case 'P':
+            return (strings.starts_with(buf, "Person=") ||
+                    strings.starts_with(buf, "Polarity=") ||
+                    strings.starts_with(buf, "Poss=") ||
+                    strings.starts_with(buf, "PronType="))
+        case 'R':
+            return strings.starts_with(buf, "Reflex=")
+        case 'T':
+            return strings.starts_with(buf, "Tense=")
+        case 'V':
+            return strings.starts_with(buf, "VerbForm=")
+        }
+    case .PUDGLG:
+        switch buf[0] {
+        case 'A':
+            return strings.starts_with(buf, "AdpType=")
+        case 'C':
+            return (strings.starts_with(buf, "Case=") ||
+                    strings.starts_with(buf, "Clitic="))
+        case 'D':
+            return strings.starts_with(buf, "Definite=")
+        case 'E':
+            return strings.starts_with(buf, "ExtPos=")
+        case 'F':
+            return strings.starts_with(buf, "Foreign=")
+        case 'G':
+            return strings.starts_with(buf, "Gender=")
+        case 'M':
+            return strings.starts_with(buf, "Mood=")
+        case 'N':
+            return (strings.starts_with(buf, "Number=") ||
+                    strings.starts_with(buf, "Number[psor]=") ||
+                    strings.starts_with(buf, "NumType="))
+        case 'P':
+            return (strings.starts_with(buf, "Person=") ||
+                    strings.starts_with(buf, "Polarity=") ||
+                    strings.starts_with(buf, "Poss=") ||
+                    strings.starts_with(buf, "PronType="))
+        case 'T':
+            return strings.starts_with(buf, "Tense=")
+        case 'V':
+            return strings.starts_with(buf, "VerbForm=")
+        }
     }
     return false
 }
@@ -273,7 +371,7 @@ score_buffer :: proc(src: []byte, tgt: []byte, opt: Options) -> (score: int) {
 	score += abs(val)
     }
     for key, val in feat_counts {
-        if val < 0 {
+        if opt.include_missing || val < 0 {
 	        score += abs(val)
         }
     }
@@ -287,11 +385,17 @@ main :: proc() {
 
     switch opt.target_lang {
     case "blx":
-	CURRENT_LANG = .BLX
+	    CURRENT_LANG = .BLX
     case "eng":
-	CURRENT_LANG = .ENG
+	    CURRENT_LANG = .ENG
     case "grc":
-	CURRENT_LANG = .GRC
+	    CURRENT_LANG = .GRC
+    case "pudeng":
+        CURRENT_LANG = .PUDENG
+    case "pudpor":
+        CURRENT_LANG = .PUDPOR
+    case "pudglg":
+        CURRENT_LANG = .PUDGLG
     }
 
     state, src, stderr, serr := os2.process_exec({
