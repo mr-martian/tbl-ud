@@ -4,7 +4,6 @@ import "core:flags"
 import "core:fmt"
 import "core:mem"
 import "core:os"
-import "core:os/os2"
 import "core:slice"
 import "core:strings"
 
@@ -398,7 +397,7 @@ main :: proc() {
         CURRENT_LANG = .PUDGLG
     }
 
-    state, src, stderr, serr := os2.process_exec({
+    state, src, stderr, serr := os.process_exec({
 	command = {"vislcg3", "-g", opt.grammar, "-I", opt.src,
 		   "--in-binary", "--out-binary"},
     }, context.allocator)
@@ -406,7 +405,7 @@ main :: proc() {
     defer delete(src)
     defer delete(stderr)
 
-    tgt, terr := os2.read_entire_file_from_path(opt.tgt, context.allocator)
+    tgt, terr := os.read_entire_file_from_path(opt.tgt, context.allocator)
     defer delete(tgt)
 
     arena_data := make([]u8, mem.Megabyte)
@@ -461,7 +460,7 @@ main :: proc() {
     }
     fmt.println("score", score, "windows", windows)
     if len(opt.output) > 0 {
-	we := os2.write_entire_file_from_bytes(opt.output, src)
+	we := os.write_entire_file_from_bytes(opt.output, src)
 	fmt.eprintln("status:", we)
     }
 }
