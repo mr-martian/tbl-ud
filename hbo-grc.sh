@@ -11,6 +11,10 @@ make_hbo() {
   python3 conllu2apertium.py --surface NOUN:Gender VERB:HebBinyan AUX:HebBinyan DET:PronType PROPN:Gender ExtPos 'LexDomain[SDBH]' 'LId[SDBH]' --skip_ids '31:51|32:33|35:21' | lt-proc -O generated/hbo-grc/gloss.bin | sed -E 's|(\^[^/]+/[^<]+)<|\1<SOURCE><|g' | cg-conv -a | vislcg3 --dep-delimit -g rempunct.cg3 --out-binary
 }
 
+make_hbo_plain() {
+  python3 conllu2apertium.py --surface NOUN:Gender VERB:HebBinyan AUX:HebBinyan DET:PronType PROPN:Gender ExtPos 'LexDomain[SDBH]' 'LId[SDBH]' --skip_ids '31:51|32:33|35:21' | sed -E 's|(\^[^/]+/[^<]+)<|\1<SOURCE><|g' | cg-conv -a | vislcg3 --dep-delimit -g rempunct.cg3 --out-binary
+}
+
 python3 dix_by_gloss.py "$hin" "$gin" -t NOUN:Gender -s NOUN:Gender -s VERB:HebBinyan -s AUX:HebBinyan -s DET:PronType -t DET:PronType -s PROPN:Gender -t PROPN:Gender generated/hbo-grc/gloss.dix
 
 lt-comp lr generated/hbo-grc/gloss.dix generated/hbo-grc/gloss.bin
@@ -24,3 +28,7 @@ cat ~/UD_Ancient_Greek-PTNK/grc_ptnk-ud-dev.conllu | make_grc dev
 
 mkdir -p generated/hbo-grc/g_cv
 python3 cv_split.py generated/hbo-grc/hbo.train.bin generated/hbo-grc/grc.train.bin generated/hbo-grc/g_cv
+
+cat sources/hbo-short-train.conllu | make_hbo_plain > generated/hbo-grc/hbo-plain.train.bin
+cat sources/hbo-short-test.conllu | make_hbo_plain > generated/hbo-grc/hbo-plain.test.bin
+cat sources/hbo-short-dev.conllu | make_hbo_plain > generated/hbo-grc/hbo-plain.dev.bin

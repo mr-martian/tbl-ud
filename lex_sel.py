@@ -156,6 +156,9 @@ def map_window(window_num):
 def get_context(window_num, cohort_num):
     window = source[window_num]
     locs, parents, siblings, children = map_window(window_num)
+    #print(window_num)
+    #print(parents)
+    #print(window)
     target = window.cohorts[cohort_num].dep_self
     def desc_single(rel, wid):
         if wid in locs:
@@ -229,19 +232,16 @@ def score_rule(rpath, key, rule):
         diff += s - base_scores[i]
     return diff, set(windows)
 
+CUR_SOURCE = None
+CUR_TARGET = None
+
 def start_rule(prefix, rule):
     gpath = prefix + '.cg3'
-    spath = prefix + '.input.bin'
-    tpath = prefix + '.output.bin'
     with open(gpath, 'w') as fout:
         fout.write(RULE_HEADER + rule)
-    with open(spath, 'wb') as fout:
-        fout.write(CG_BIN_HEADER + b''.join(source_blocks) + CG_BIN_FOOTER)
-    with open(tpath, 'wb') as fout:
-        fout.write(CG_BIN_HEADER + b''.join(target_blocks) + CG_BIN_FOOTER)
     return subprocess.Popen(
         [(args.score_proc or 'ch4_pipe_score/ch4_pipe_score'),
-         gpath, spath, tpath, args.lang],
+         gpath, CUR_SOURCE, CUR_TARGET, args.lang],
         stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
 def finish_rule(proc):
@@ -261,7 +261,14 @@ with (TemporaryDirectory() as tmpdir_,
     print('## 0:', sum(base_scores), file=rule_output)
     print('## 0:', sum(base_scores))
 
+    CUR_TARGET = os.path.join(tmpdir, 'target.bin')
+    with open(CUR_TARGET, 'wb') as fout:
+        fout.write(CG_BIN_HEADER + b''.join(target_blocks) + CG_BIN_FOOTER)
+
     for iteration in range(args.iterations):
+        CUR_SOURCE = os.path.join(tmpdir, f'input.{iteration}.bin')
+        with open(CUR_SOURCE, 'wb') as fout:
+            fout.write(CG_BIN_HEADER + b''.join(source_blocks) + CG_BIN_FOOTER)
         freq = Counter()
         for key, count in ambiguity.most_common(args.lemma_count):
             print(key, count)

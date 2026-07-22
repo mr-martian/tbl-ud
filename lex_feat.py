@@ -44,10 +44,18 @@ FEATS = {
     'blx': {"Adjz", "Aspect", "Caus", "Degree", "Emph", "Loc", "Mood", "Nmlz", "NumType", "Number", "Pluraction", "Polarity", "Poss", "Redup", "Voice"},
     'eng': {"Animacy", "Case", "Definite", "Degree", "Gender", "LexCat", "Mood", "Number", "NumType", "Person", "PronType", "Tense", "VerbForm"},
     'grc': {"Aspect", "Case", "Definite", "Degree", "Gender", "Mood", "NumType", "Number", "Person", "Polarity", "Poss", "PronType", "Reflex", "Tense", "VerbForm", "Voice"},
+    'pudeng': {'Abbr', 'Case', 'Definite', 'Degree', 'ExtPos', 'Foreign', 'Gender', 'Mood', 'Number', 'NumForm', 'NumType', 'Person', 'Polarity', 'Poss', 'PronType', 'Reflex', 'Style', 'Tense', 'Typo', 'VerbForm'},
+    'pudpor': {'Case', 'Definite', 'Foreign', 'Gender', 'Mood', 'Number', 'Number[psor]', 'Person', 'Polarity', 'Poss', 'PronType', 'Reflex', 'Tense', 'VerbForm'},
+    'pudglg': {'AdpType', 'Case', 'Clitic', 'Definite', 'ExtPos', 'Foreign', 'Gender', 'Mood', 'Number', 'Number[psor]', 'NumType', 'Person', 'Polarity', 'Poss', 'PronType', 'Tense', 'VerbForm'},
 }
 
+def escape_set_name(n):
+    return n.replace('[', '_').replace(']', '')
+def escape_for_regex(n):
+    return n.replace('[', '\\\\[').replace(']', '\\\\]')
+
 for f in sorted(FEATS.get(args.lang, set())):
-    RULE_HEADER += f'LIST {f} = /^{f}=.*$/r ;\n'
+    RULE_HEADER += f'LIST {escape_set_name(f)} = /^{escape_for_regex(f)}=.*$/r ;\n'
 RULE_HEADER += '\n'
 
 def get_feats(reading):
@@ -259,7 +267,7 @@ def gen_rules_window(window_num):
                                 continue
                             ts = ts0
                             if t1 == '*':
-                                ts += ' - ' + f
+                                ts += ' - ' + escape_set_name(f)
                             yield (f'SUBSTITUTE ({t1}) ({t2}) {ts} IF {ctx} ;', (ts0, f))
 
 CUR_SOURCE = None

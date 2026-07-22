@@ -12,12 +12,16 @@ python3 remap_bidix.py ~/apertium/apertium-data/apertium-es-gl/apertium-es-gl.es
 lt-comp lr spa/spa-glg.dix spa/spa-glg.bin
 
 conv() {
-    cg-conv | vislcg3 --out-binary --dep-delimit -g spa/ensure_pos_tag.cg3
+    vislcg3 --in-apertium -g spa/ensure_pos_tag.cg3 | cg-conv --dep-delimit -Z
 }
 
-cat ud-treebanks-v2.17/UD_Spanish-PUD/*.conllu | python3 conllu2apertium.py --surface Person Gender | lt-proc -O spa/spa-glg.bin | conv > spa/glg.src.bin
-cat ud-treebanks-v2.17/UD_Spanish-PUD/*.conllu | python3 conllu2apertium.py --surface Person Gender | lt-proc -O spa/spa-por.bin | conv > spa/por.src.bin
-cat ud-treebanks-v2.17/UD_Spanish-PUD/*.conllu | python3 conllu2apertium.py --surface Person Gender | lt-proc -O spa/spa-eng.bin | conv > spa/eng.src.bin
+add_src() {
+    sed -E 's|(\^[^/]+/[^<]+)<|\1<SOURCE><|g'
+}
+
+cat ud-treebanks-v2.17/UD_Spanish-PUD/*.conllu | python3 conllu2apertium.py --surface Person Gender | lt-proc -O spa/spa-glg.bin | add_src | conv > spa/glg.src.bin
+cat ud-treebanks-v2.17/UD_Spanish-PUD/*.conllu | python3 conllu2apertium.py --surface Person Gender | lt-proc -O spa/spa-por.bin | add_src | conv > spa/por.src.bin
+cat ud-treebanks-v2.17/UD_Spanish-PUD/*.conllu | python3 conllu2apertium.py --surface Person Gender | lt-proc -O spa/spa-eng.bin | add_src | conv > spa/eng.src.bin
 
 cat ud-treebanks-v2.17/UD_English-PUD/*.conllu | \
     python3 conllu2apertium.py --surface BLAH | \
